@@ -519,7 +519,7 @@ body {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: none;
+  font-family: var(--font-body, inherit);
 }
 .hold-bar:active { background: rgba(245,158,11,0.08); }
 .hold-bar-text { color: var(--text); font-size: 15px; font-weight: 600; }
@@ -782,9 +782,9 @@ body {
 
       <div class="chat-input-area" style="flex-shrink:0;">
         <div class="chat-divider"></div>
-        <div class="hold-bar" id="hold-bar">
+        <button class="hold-bar" id="hold-bar" type="button">
           <span class="hold-bar-text" id="hold-bar-text">Toca para hablar</span>
-        </div>
+        </button>
       </div>
     </div>
 
