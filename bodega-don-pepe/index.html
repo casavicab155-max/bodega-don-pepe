@@ -1381,42 +1381,33 @@ document.getElementById('inp-chat').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarChat(); }
 });
 
-// ── Voz: click simple para iniciar/detener ─────────────────────────
+// ── Voz: sistema original que funcionaba ────────────────────────────
 (function() {
   const btn = document.getElementById('hold-bar');
   const overlay = document.getElementById('grabando-overlay');
   const transcDiv = document.getElementById('grabando-transcripcion');
-  const hintDiv = document.querySelector('.grabando-hint');
 
   let rec = null;
   let grabando = false;
   let textoActual = '';
 
-  function soportaVoz() {
-    return 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
-  }
-
-  function iniciarGrabacion() {
-    if (!soportaVoz()) {
+  function toggleVoz() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       toast('Tu navegador no soporta voz. Usa Chrome.', 'error');
       return;
     }
+
     if (grabando) {
-      detenerGrabacion(false);
+      grabando = false;
+      overlay.classList.remove('visible');
+      rec?.stop();
       return;
     }
-
-    grabando = true;
-    textoActual = '';
-    transcDiv.textContent = 'Escuchando...';
-    if (hintDiv) hintDiv.textContent = 'Toca de nuevo para enviar · Desliza para cancelar';
-    overlay.classList.add('visible');
-    btn.style.opacity = '0.5';
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     rec = new SR();
     rec.lang = 'es-PE';
-    rec.continuous = true;
+    rec.continuous = false;
     rec.interimResults = true;
 
     rec.onresult = (e) => {
@@ -1426,79 +1417,31 @@ document.getElementById('inp-chat').addEventListener('keydown', e => {
       transcDiv.textContent = texto || 'Escuchando...';
     };
 
-    rec.onerror = (e) => {
-      overlay.classList.remove('visible');
-      btn.style.opacity = '1';
-      grabando = false;
-      rec = null;
-      if (e.error === 'not-allowed') {
-        toast('Permiso de micrófono denegado. Permite el micrófono en tu navegador.', 'error');
-      } else {
-        toast('Error de micrófono: ' + e.error, 'error');
-      }
-    };
-
     rec.onend = () => {
-      if (grabando) {
-        // Se detuvo solo — enviar lo que hay
-        overlay.classList.remove('visible');
-        btn.style.opacity = '1';
-        grabando = false;
-        rec = null;
-        if (textoActual.trim()) {
-          document.getElementById('inp-chat').value = textoActual.trim();
-          enviarChat();
-        }
-      }
-    };
-
-    try {
-      rec.start();
-    } catch(e) {
-      toast('No se pudo iniciar el micrófono', 'error');
       grabando = false;
       overlay.classList.remove('visible');
-      btn.style.opacity = '1';
-    }
-  }
-
-  function detenerGrabacion(cancelar) {
-    if (!grabando) return;
-    grabando = false;
-    overlay.classList.remove('visible');
-    btn.style.opacity = '1';
-    if (hintDiv) hintDiv.textContent = 'Toca para enviar · Desliza arriba para cancelar';
-
-    if (rec) {
-      rec.onend = null; // evitar doble disparo
-      try { rec.stop(); } catch(e) {}
+      if (textoActual.trim()) {
+        document.getElementById('inp-chat').value = textoActual.trim();
+        enviarChat();
+      }
       rec = null;
-    }
+    };
 
-    if (!cancelar && textoActual.trim()) {
-      document.getElementById('inp-chat').value = textoActual.trim();
-      enviarChat();
-    } else if (cancelar) {
-      toast('Mensaje cancelado');
-    }
+    rec.onerror = (e) => {
+      grabando = false;
+      overlay.classList.remove('visible');
+      rec = null;
+      toast('Error: ' + e.error, 'error');
+    };
+
+    grabando = true;
+    textoActual = '';
+    transcDiv.textContent = 'Escuchando...';
+    overlay.classList.add('visible');
+    rec.start();
   }
 
-  // Click / tap para iniciar o detener
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    iniciarGrabacion();
-  });
-
-  // También touch para móvil
-  btn.addEventListener('touchend', (e) => {
-    e.preventDefault();
-    iniciarGrabacion();
-  }, { passive: false });
-
-  // Overlay: tap para enviar
-  overlay.addEventListener('click', () => {
-    detenerGrabacion(false);
-  });
+  btn.addEventListener('click', toggleVoz);
 
 })();
 
