@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#f59e0b">
+<meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Bodega Don Pepe">
@@ -14,20 +14,21 @@
 <style>
 /* ── Variables ─────────────────────────────────────────────────── */
 :root {
-  --bg: #0f172a;
-  --bg2: #1e293b;
-  --bg3: #334155;
-  --border: #475569;
-  --text: #f8fafc;
-  --text2: #94a3b8;
-  --amber: #f59e0b;
-  --amber2: #d97706;
-  --green: #22c55e;
-  --red: #ef4444;
-  --orange: #f97316;
-  --yellow: #eab308;
-  --blue: #3b82f6;
-  --radius: 12px;
+  --bg:      #f9fafb;
+  --bg2:     #ffffff;
+  --bg3:     #f3f4f6;
+  --border:  #e5e7eb;
+  --border2: #f3f4f6;
+  --text:    #111827;
+  --text2:   #6b7280;
+  --text3:   #d1d5db;
+  --accent:  #111827;
+  --green:   #22c55e;
+  --red:     #ef4444;
+  --orange:  #f97316;
+  --yellow:  #eab308;
+  --blue:    #3b82f6;
+  --radius:  12px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bot: env(safe-area-inset-bottom, 0px);
 }
@@ -50,10 +51,10 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: linear-gradient(135deg, #0f172a 0%, #1a0a2e 100%);
+  background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
 }
 .login-logo { font-size: 72px; margin-bottom: 8px; }
-.login-title { font-size: 28px; font-weight: 700; color: var(--amber); margin-bottom: 4px; }
+.login-title { font-size: 28px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
 .login-sub { color: var(--text2); font-size: 14px; margin-bottom: 32px; }
 
 .login-card {
@@ -74,14 +75,15 @@ body {
   background: var(--bg3);
   color: var(--text);
   font-size: 16px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
 }
 .form-group input:focus { outline: none; border-color: var(--amber); }
 
 .btn-primary {
   width: 100%;
   padding: 14px;
-  background: var(--amber);
-  color: #000;
+  background: var(--text);
+  color: #fff;
   border: none;
   border-radius: var(--radius);
   font-size: 16px;
@@ -90,7 +92,7 @@ body {
   transition: all 0.15s;
   margin-top: 8px;
 }
-.btn-primary:active { transform: scale(0.97); background: var(--amber2); }
+.btn-primary:active { transform: scale(0.97); background: var(--accent); }
 .btn-primary:disabled { opacity: 0.5; }
 
 #login-error {
@@ -115,8 +117,9 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
-.topbar-title { font-size: 18px; font-weight: 700; color: var(--amber); }
+.topbar-title { font-size: 18px; font-weight: 700; color: var(--text); }
 .topbar-user { font-size: 12px; color: var(--text2); text-align: right; }
 .topbar-user strong { display: block; color: var(--text); font-size: 14px; }
 
@@ -154,7 +157,7 @@ body {
   transition: color 0.15s;
 }
 .nav-btn .icon { font-size: 22px; }
-.nav-btn.active { color: var(--amber); }
+.nav-btn.active { color: var(--text); font-weight: 600; }
 
 /* Screens */
 .screen { display: none; }
@@ -200,8 +203,8 @@ body {
   padding: 10px 14px;
   border-radius: var(--radius);
   border: none;
-  background: var(--amber);
-  color: #000;
+  background: var(--text);
+  color: #fff;
   font-size: 18px;
   cursor: pointer;
   font-weight: 700;
@@ -249,7 +252,7 @@ body {
 .prod-venc.bien { background: rgba(34,197,94,0.1); color: var(--green); }
 
 .prod-right { text-align: right; flex-shrink: 0; }
-.prod-precio { font-size: 17px; font-weight: 700; color: var(--amber); }
+.prod-precio { font-size: 17px; font-weight: 700; color: var(--text); }
 .prod-stock { font-size: 13px; color: var(--text2); }
 .prod-stock.bajo { color: var(--red); font-weight: 600; }
 
@@ -368,17 +371,17 @@ body {
   padding: 14px;
   background: var(--bg2);
   border-radius: var(--radius);
-  border: 1px solid var(--amber);
+  border: 1px solid var(--border);
   margin-bottom: 12px;
 }
 .total-label { font-size: 16px; color: var(--text2); }
-.total-valor { font-size: 24px; font-weight: 800; color: var(--amber); }
+.total-valor { font-size: 24px; font-weight: 800; color: var(--text); }
 
 .btn-success {
   width: 100%;
   padding: 16px;
-  background: var(--green);
-  color: #000;
+  background: var(--text);
+  color: #fff;
   border: none;
   border-radius: var(--radius);
   font-size: 16px;
@@ -436,8 +439,8 @@ body {
   border-bottom-left-radius: 4px;
 }
 .bubble.user {
-  background: var(--amber);
-  color: #000;
+  background: var(--text);
+  color: #fff;
   align-self: flex-end;
   border-bottom-right-radius: 4px;
   font-weight: 500;
@@ -454,8 +457,8 @@ body {
   margin-top: 8px;
 }
 .bubble.ia table th {
-  background: var(--bg);
-  color: var(--amber);
+  background: var(--bg3);
+  color: var(--text2);
   padding: 7px 8px;
   text-align: left;
   font-weight: 600;
@@ -495,11 +498,11 @@ body {
 .chat-input-area {
   background: var(--bg2);
   border-top: 1px solid var(--border);
-  padding: 14px 16px calc(14px + var(--safe-bot));
+  padding: 12px 16px calc(12px + var(--safe-bot));
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0;
+  gap: 10px;
+  box-shadow: 0 -1px 3px rgba(0,0,0,0.04);
 }
 .chat-divider {
   width: 40px; height: 3px;
@@ -510,26 +513,68 @@ body {
 .hold-bar {
   width: 100%;
   background: var(--bg);
-  border: 2px solid var(--amber);
+  border: 2px solid var(--text);
   border-radius: 28px;
-  padding: 18px 20px;
+  padding: 16px 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  font-family: var(--font-body, inherit);
+  font-family: inherit;
+  transition: background 0.15s;
 }
-.hold-bar:active { background: rgba(245,158,11,0.08); }
+.hold-bar:active,
+.hold-bar.grabando { background: var(--text); color: #fff; }
+.hold-bar.grabando svg { stroke: #fff; }
 .hold-bar-text { color: var(--text); font-size: 15px; font-weight: 600; }
+.hold-bar.grabando .hold-bar-text { color: #fff; }
+
+.chat-sep { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
+.chat-sep-line { flex: 1; height: 1px; background: var(--border); }
+.chat-sep-txt { font-size: 11px; color: var(--text3); font-weight: 500; }
+
+.chat-text-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: var(--bg3);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 4px 4px 16px;
+}
+.chat-text-row input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  padding: 8px 0;
+  font-family: inherit;
+}
+.chat-text-row input::placeholder { color: var(--text3); }
+.chat-send-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--text);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+.chat-send-btn:active { opacity: 0.7; }
 
 /* Overlay de grabación */
 #grabando-overlay {
   display: none;
   position: fixed;
   bottom: 0; left: 0; right: 0;
-  background: rgba(15,23,42,0.97);
+  background: rgba(249,250,251,0.97);
   border-top: 1px solid var(--border);
   border-radius: 20px 20px 0 0;
   padding: 24px 20px calc(32px + var(--safe-bot));
@@ -538,6 +583,7 @@ body {
   align-items: center;
   gap: 14px;
   animation: slideUp 0.2s ease;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.08);
 }
 #grabando-overlay.visible { display: flex; }
 
@@ -550,7 +596,7 @@ body {
 .grabando-waves span {
   display: inline-block;
   width: 4px;
-  background: var(--amber);
+  background: var(--text);
   border-radius: 4px;
   animation: wave 0.8s ease-in-out infinite;
 }
@@ -566,7 +612,7 @@ body {
   50% { height: 36px; }
 }
 .grabando-transcripcion {
-  color: var(--amber);
+  color: var(--text);
   font-size: 15px;
   font-weight: 600;
   text-align: center;
@@ -590,7 +636,7 @@ body {
   border: 1px solid var(--border);
   text-align: center;
 }
-.stat-value { font-size: 28px; font-weight: 800; color: var(--amber); }
+.stat-value { font-size: 28px; font-weight: 800; color: var(--text); }
 .stat-label { font-size: 12px; color: var(--text2); margin-top: 4px; }
 
 .venta-row {
@@ -660,8 +706,8 @@ body {
   position: fixed;
   top: calc(var(--safe-top) + 60px);
   left: 12px; right: 12px;
-  background: var(--amber);
-  color: #000;
+  background: var(--text);
+  color: #fff;
   padding: 12px 16px;
   border-radius: var(--radius);
   z-index: 150;
@@ -674,8 +720,8 @@ body {
 }
 @keyframes slideDown { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 #install-banner button {
-  background: #000;
-  color: var(--amber);
+  background: #fff;
+  color: var(--text);
   border: none;
   padding: 6px 14px;
   border-radius: 8px;
@@ -783,8 +829,20 @@ body {
       <div class="chat-input-area" style="flex-shrink:0;">
         <div class="chat-divider"></div>
         <button class="hold-bar" id="hold-bar" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
           <span class="hold-bar-text" id="hold-bar-text">Toca para hablar</span>
         </button>
+        <div class="chat-sep">
+          <div class="chat-sep-line"></div>
+          <span class="chat-sep-txt">o escribe</span>
+          <div class="chat-sep-line"></div>
+        </div>
+        <div class="chat-text-row">
+          <input type="text" id="inp-chat" placeholder="Escribe tu mensaje..." />
+          <button class="chat-send-btn" onclick="enviarChat()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="#fff" stroke="none"/></svg>
+          </button>
+        </div>
       </div>
     </div>
 
