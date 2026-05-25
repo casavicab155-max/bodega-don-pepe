@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Micrófono</title>
+<style>
+body { font-family: sans-serif; padding: 40px 20px; background: #111; color: #fff; text-align: center; }
+button { font-size: 20px; padding: 20px 40px; border-radius: 16px; border: none; background: #f59e0b; color: #000; font-weight: 700; cursor: pointer; margin: 20px 0; width: 100%; }
+#resultado { font-size: 18px; margin-top: 20px; color: #22c55e; min-height: 60px; }
+#estado { font-size: 14px; color: #94a3b8; margin-top: 10px; }
+</style>
+</head>
+<body>
+<h2>🎤 Test de Micrófono</h2>
+<p>Presiona el botón y habla</p>
+<button id="btn-mic" onclick="iniciar()">PRESIONA AQUÍ Y HABLA</button>
+<div id="resultado">—</div>
+<div id="estado"></div>
+
+<script>
+function iniciar() {
+  const resultado = document.getElementById('resultado');
+  const estado = document.getElementById('estado');
+  const btn = document.getElementById('btn-mic');
+
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    resultado.textContent = '❌ No soportado en este navegador';
+    return;
+  }
+
+  estado.textContent = 'Iniciando...';
+  resultado.textContent = '🎤 Escuchando...';
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new SR();
+  rec.lang = 'es-PE';
+  rec.continuous = false;
+  rec.interimResults = true;
+
+  rec.onstart = () => {
+    estado.textContent = '✅ Micrófono activo';
+    btn.textContent = 'Escuchando...';
+    btn.style.background = '#ef4444';
+  };
+
+  rec.onresult = (e) => {
+    let texto = '';
+    for (const r of e.results) texto += r[0].transcript;
+    resultado.textContent = '💬 ' + texto;
+  };
+
+  rec.onerror = (e) => {
+    resultado.textContent = '❌ Error: ' + e.error;
+    estado.textContent = 'Código de error: ' + e.error;
+    btn.textContent = 'PRESIONA AQUÍ Y HABLA';
+    btn.style.background = '#f59e0b';
+  };
+
+  rec.onend = () => {
+    estado.textContent = 'Terminado';
+    btn.textContent = 'PRESIONA AQUÍ Y HABLA';
+    btn.style.background = '#f59e0b';
+  };
+
+  rec.start();
+}
+</script>
+</body>
+</html>
