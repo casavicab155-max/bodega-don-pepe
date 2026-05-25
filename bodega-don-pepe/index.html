@@ -828,7 +828,7 @@ body {
 
       <div class="chat-input-area" style="flex-shrink:0;">
         <div class="chat-divider"></div>
-        <button class="hold-bar" id="hold-bar" type="button">
+        <button class="hold-bar" id="hold-bar" type="button" onclick="toggleVoz()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
           <span class="hold-bar-text" id="hold-bar-text">Toca para hablar</span>
         </button>
@@ -1439,69 +1439,69 @@ document.getElementById('inp-chat').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarChat(); }
 });
 
-// ── Voz: sistema original que funcionaba ────────────────────────────
-(function() {
+// ── Voz: onclick directo (mismo patrón que funciona en test-mic) ────
+let _rec = null;
+let _grabando = false;
+
+function toggleVoz() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    toast('Tu navegador no soporta voz. Usa Chrome.', 'error');
+    return;
+  }
+
   const btn = document.getElementById('hold-bar');
   const overlay = document.getElementById('grabando-overlay');
   const transcDiv = document.getElementById('grabando-transcripcion');
 
-  let rec = null;
-  let grabando = false;
-  let textoActual = '';
-
-  function toggleVoz() {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      toast('Tu navegador no soporta voz. Usa Chrome.', 'error');
-      return;
-    }
-
-    if (grabando) {
-      grabando = false;
-      overlay.classList.remove('visible');
-      rec?.stop();
-      return;
-    }
-
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    rec = new SR();
-    rec.lang = 'es-PE';
-    rec.continuous = false;
-    rec.interimResults = true;
-
-    rec.onresult = (e) => {
-      let texto = '';
-      for (const r of e.results) texto += r[0].transcript;
-      textoActual = texto;
-      transcDiv.textContent = texto || 'Escuchando...';
-    };
-
-    rec.onend = () => {
-      grabando = false;
-      overlay.classList.remove('visible');
-      if (textoActual.trim()) {
-        document.getElementById('inp-chat').value = textoActual.trim();
-        enviarChat();
-      }
-      rec = null;
-    };
-
-    rec.onerror = (e) => {
-      grabando = false;
-      overlay.classList.remove('visible');
-      rec = null;
-      toast('Error: ' + e.error, 'error');
-    };
-
-    grabando = true;
-    textoActual = '';
-    transcDiv.textContent = 'Escuchando...';
-    overlay.classList.add('visible');
-    rec.start();
+  if (_grabando) {
+    _grabando = false;
+    btn.classList.remove('grabando');
+    overlay.classList.remove('visible');
+    document.getElementById('hold-bar-text').textContent = 'Toca para hablar';
+    if (_rec) { try { _rec.stop(); } catch(e) {} _rec = null; }
+    return;
   }
 
-  btn.addEventListener('click', toggleVoz);
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  _rec = new SR();
+  _rec.lang = 'es-PE';
+  _rec.continuous = false;
+  _rec.interimResults = true;
 
-})();
+  _rec.onresult = (e) => {
+    let texto = '';
+    for (const r of e.results) texto += r[0].transcript;
+    transcDiv.textContent = texto || 'Escuchando...';
+    document.getElementById('inp-chat').value = texto;
+  };
+
+  _rec.onend = () => {
+    _grabando = false;
+    btn.classList.remove('grabando');
+    overlay.classList.remove('visible');
+    document.getElementById('hold-bar-text').textContent = 'Toca para hablar';
+    const txt = document.getElementById('inp-chat').value.trim();
+    if (txt) enviarChat();
+    _rec = null;
+  };
+
+  _rec.onerror = (e) => {
+    _grabando = false;
+    btn.classList.remove('grabando');
+    overlay.classList.remove('visible');
+    document.getElementById('hold-bar-text').textContent = 'Toca para hablar';
+    _rec = null;
+    if (e.error !== 'no-speech') toast('Error micrófono: ' + e.error, 'error');
+  };
+
+  _grabando = true;
+  document.getElementById('inp-chat').value = '';
+  transcDiv.textContent = 'Escuchando...';
+  btn.classList.add('grabando');
+  document.getElementById('hold-bar-text').textContent = 'Escuchando...';
+  overlay.classList.add('visible');
+  _rec.start();
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // REPORTES
