@@ -91,7 +91,11 @@ body {
   cursor: pointer;
   transition: all 0.15s;
   margin-top: 8px;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+  touch-action: manipulation;
 }
+.btn-primary * { pointer-events: none; }
 .btn-primary:active { transform: scale(0.97); background: var(--accent); }
 .btn-primary:disabled { opacity: 0.5; }
 
@@ -387,7 +391,9 @@ body {
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
+  touch-action: manipulation;
 }
+.btn-success * { pointer-events: none; }
 .btn-success:active { transform: scale(0.97); }
 .btn-success:disabled { opacity: 0.5; }
 
@@ -1126,7 +1132,8 @@ async function iniciarApp() {
 async function cargarProductos() {
   try {
     estadoApp.productos = await api({ action: 'getProductos' });
-    renderInventario();
+    const filtroActual = document.getElementById('buscar-prod')?.value || '';
+    renderInventario(filtroActual);
   } catch (e) {
     toast('Error cargando productos: ' + e.message, 'error');
   }
