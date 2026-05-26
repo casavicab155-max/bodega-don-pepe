@@ -951,7 +951,7 @@ body {
       <label>📅 Fecha de vencimiento</label>
       <input type="date" id="prod-vencimiento">
     </div>
-    <button class="btn-primary" onclick="guardarProducto()" id="btn-guardar-prod">Guardar</button>
+    <button class="btn-primary" onclick="guardarProducto()" ontouchend="event.preventDefault();guardarProducto()" id="btn-guardar-prod">Guardar</button>
     <button class="btn-danger" id="btn-desactivar-prod" onclick="desactivarProducto()" style="display:none">Desactivar producto</button>
     <input type="hidden" id="prod-id">
   </div>
