@@ -1207,9 +1207,9 @@ function abrirModalProducto(id) {
   document.getElementById('prod-nombre').value = prod?.nombre || '';
   document.getElementById('prod-cat').value = prod?.categoria || 'general';
   document.getElementById('prod-unidad').value = prod?.unidad || 'unidad';
-  document.getElementById('prod-precio').value = prod?.precio_venta || '';
-  document.getElementById('prod-costo').value = prod?.precio_costo || '';
-  document.getElementById('prod-stock').value = prod?.stock ?? '';
+  document.getElementById('prod-precio').value = prod?.precio_venta ?? '';
+  document.getElementById('prod-costo').value = prod?.precio_costo ?? '';
+  document.getElementById('prod-stock').value = prod?.stock ?? 0;
   document.getElementById('prod-stock-min').value = prod?.stock_minimo ?? 5;
   document.getElementById('prod-vencimiento').value = prod?.fecha_vencimiento || '';
   document.getElementById('btn-desactivar-prod').style.display = prod ? 'block' : 'none';
@@ -1227,12 +1227,14 @@ document.getElementById('modal-producto').addEventListener('click', e => {
 
 async function guardarProducto() {
   const nombre = document.getElementById('prod-nombre').value.trim();
-  const precio = parseFloat(document.getElementById('prod-precio').value);
-  const stock = parseInt(document.getElementById('prod-stock').value);
+  const precioRaw = document.getElementById('prod-precio').value;
+  const stockRaw = document.getElementById('prod-stock').value;
+  const precio = parseFloat(precioRaw);
+  const stock = parseInt(stockRaw);
 
-  if (!nombre) return toast('El nombre es obligatorio', 'error');
-  if (isNaN(precio) || precio < 0) return toast('El precio no es válido', 'error');
-  if (isNaN(stock) || stock < 0) return toast('El stock no es válido', 'error');
+  if (!nombre) { toast('El nombre es obligatorio', 'error'); return; }
+  if (precioRaw === '' || isNaN(precio) || precio < 0) { toast('El precio no es válido: "' + precioRaw + '"', 'error'); return; }
+  if (stockRaw === '' || isNaN(stock) || stock < 0) { toast('El stock no es válido: "' + stockRaw + '"', 'error'); return; }
 
   const producto = {
     id: document.getElementById('prod-id').value || undefined,
