@@ -165,17 +165,32 @@ debes responder EXCLUSIVAMENTE en este formato JSON sin ningún texto extra:
 }
 </VENTA>
 
-Cuando el usuario quiere REGISTRAR UNA ENTRADA DE MERCADERÍA (frases como "entró mercadería", "recibí", "llegó pedido", "ingresé", etc.),
+Cuando el usuario quiere REGISTRAR UNA ENTRADA DE MERCADERÍA (frases como "entró mercadería", "recibí", "llegó pedido", "ingresé", "llegaron", etc.),
 responde EXCLUSIVAMENTE en este formato JSON:
 
 <ENTRADA>
 {
   "mensaje": "Listo, registré la entrada de [descripción].",
   "items": [
-    {"nombre_buscado": "nombre del producto", "cantidad": número, "precio_costo": número_o_null}
+    {
+      "nombre_buscado": "nombre del producto",
+      "cantidad": número,
+      "precio_costo": número_o_null,
+      "precio_venta": número_o_null,
+      "categoria": "categoría_o_null",
+      "unidad": "unidad_o_null"
+    }
   ]
 }
 </ENTRADA>
+
+REGLA IMPORTANTE para entradas de mercadería:
+- Si el producto YA EXISTE en el inventario: solo necesitas nombre_buscado y cantidad (precio_venta y categoria pueden ser null)
+- Si el producto NO EXISTE en el inventario: necesitas precio_venta obligatoriamente. Si el usuario no lo mencionó, pregúntale ANTES de responder con <ENTRADA>: "Ese producto no lo tengo registrado. ¿A cuánto lo vas a vender?"
+- precio_costo es opcional siempre
+- unidad: si no se menciona, usa "unidad" por defecto
+- categoria: si no se menciona, usa "general" por defecto
+- Cuando el producto es nuevo y tienes precio_venta, incluye todos los datos para crearlo
 
 Para cualquier otra consulta responde en texto normal. Sé conciso: máximo 3 oraciones.
 
@@ -261,18 +276,48 @@ Nunca uses el formato <VENTA> o <ENTRADA> para preguntas generales.`;
       const itemsResueltos = [];
 
       for (const item of parsed.items) {
-        const prod = buscarProductoPorNombre(item.nombre_buscado, productos);
+        let prod = buscarProductoPorNombre(item.nombre_buscado, productos);
+
+        // Si el producto NO existe y tenemos precio_venta → crearlo automáticamente
         if (!prod) {
-          return {
-            respuesta: `No encontré "${item.nombre_buscado}" en el inventario. ¿Cómo se llama exactamente?`,
-            accion: null,
+          if (!item.precio_venta) {
+            return {
+              respuesta: `"${item.nombre_buscado}" no está en el inventario. ¿A cuánto lo vas a vender?`,
+              accion: null,
+            };
+          }
+          // Crear el producto nuevo
+          const nuevoProd = {
+            nombre: item.nombre_buscado,
+            categoria: item.categoria || 'general',
+            precio_venta: item.precio_venta,
+            precio_costo: item.precio_costo || 0,
+            stock: 0, // el trigger sumará la cantidad al registrar la entrada
+            stock_minimo: 5,
+            unidad: item.unidad || 'unidad',
+            activo: true,
           };
+          const resultado = await saveProducto(nuevoProd);
+          prod = resultado.producto;
+          // Recargar para tener el id correcto
+          if (!prod) {
+            const todosProds = await getProductos();
+            prod = buscarProductoPorNombre(item.nombre_buscado, todosProds);
+          }
+          if (!prod) {
+            return {
+              respuesta: `Hubo un error creando el producto "${item.nombre_buscado}". Intenta de nuevo.`,
+              accion: null,
+            };
+          }
         }
+
         itemsResueltos.push({
           producto_id: prod.id,
           nombre_producto: prod.nombre,
           cantidad: item.cantidad,
           precio_costo: item.precio_costo || null,
+          es_nuevo: !buscarProductoPorNombre(item.nombre_buscado, productos), // para el mensaje
         });
       }
 
@@ -291,11 +336,9 @@ Nunca uses el formato <VENTA> o <ENTRADA> para preguntas generales.`;
 
 // ─── Handler principal (Vercel) ───────────────────────────────────────────────
 module.exports = async (req, res) => {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
@@ -331,6 +374,7 @@ module.exports = async (req, res) => {
       case 'chat': {
         const { respuesta, accion } = await handleChat(body);
 
+        // Ejecutar acción automáticamente si la IA la detectó
         if (accion?.tipo === 'venta') {
           try {
             await registrarVenta({
@@ -368,7 +412,6 @@ module.exports = async (req, res) => {
     }
 
     return res.status(200).json(result);
-
   } catch (err) {
     console.error('[BodegaAPI]', err);
     return res.status(500).json({ error: err.message });
