@@ -768,7 +768,7 @@ body {
         <label>Contraseña</label>
         <input type="password" id="inp-pass" placeholder="••••••••" autocomplete="current-password">
       </div>
-      <button class="btn-primary" id="btn-login" ontouchend="event.preventDefault();login()">Ingresar</button>
+      <button class="btn-primary" id="btn-login" onclick="login()" ontouchend="event.preventDefault();login()">Ingresar</button>
     </div>
 
     <!-- REGISTRO -->
@@ -1091,7 +1091,6 @@ function badgeVencimiento(dias) {
 // ═══════════════════════════════════════════════════════════════════
 // LOGIN
 // ═══════════════════════════════════════════════════════════════════
-document.getElementById('btn-login').addEventListener('click', login);
 document.getElementById('inp-pass').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 
 function switchTab(tab) {
