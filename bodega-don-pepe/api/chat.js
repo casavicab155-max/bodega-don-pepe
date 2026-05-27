@@ -34,43 +34,90 @@ async function handleAuth({ username, password }) {
   const rows = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}&activo=eq.true`);
   if (!rows || rows.length === 0) return { ok: false, error: 'Usuario no encontrado' };
   const user = rows[0];
-  // En producción usar bcrypt; por ahora comparación directa
   if (user.password_hash !== password) return { ok: false, error: 'Contraseña incorrecta' };
   return {
     ok: true,
-    user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol },
+    user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol, tienda_id: user.tienda_id },
   };
 }
 
+// ─── Registrar nueva tienda ───────────────────────────────────────────────────
+async function registrarTienda({ nombre_tienda, nombre_admin, password }) {
+  if (!nombre_tienda || !nombre_admin || !password) {
+    return { ok: false, error: 'Faltan datos obligatorios' };
+  }
+  // Verificar que el username no exista
+  const existente = await sb('GET', `usuarios?username=eq.${encodeURIComponent(nombre_admin)}`);
+  if (existente && existente.length > 0) {
+    return { ok: false, error: 'Ese nombre de usuario ya existe' };
+  }
+  // Crear tienda
+  const [tienda] = await sb('POST', 'tiendas', { nombre: nombre_tienda, propietario: nombre_admin, plan: 'basico' });
+  // Crear usuario admin de esa tienda
+  const [usuario] = await sb('POST', 'usuarios', {
+    username: nombre_admin,
+    password_hash: password,
+    nombre: nombre_admin,
+    rol: 'admin',
+    tienda_id: tienda.id,
+  });
+  return {
+    ok: true,
+    user: { id: usuario.id, username: usuario.username, nombre: usuario.nombre, rol: usuario.rol, tienda_id: tienda.id },
+    tienda: { id: tienda.id, nombre: tienda.nombre },
+  };
+}
+
+// ─── Gestión de vendedores ────────────────────────────────────────────────────
+async function getVendedores(tienda_id) {
+  return sb('GET', `usuarios?tienda_id=eq.${tienda_id}&rol=eq.vendedor&activo=eq.true&order=nombre.asc`);
+}
+
+async function crearVendedor({ tienda_id, nombre, username, password }) {
+  const existente = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}`);
+  if (existente && existente.length > 0) return { ok: false, error: 'Ese usuario ya existe' };
+  await sb('POST', 'usuarios', { username, password_hash: password, nombre, rol: 'vendedor', tienda_id, activo: true });
+  return { ok: true };
+}
+
+async function desactivarVendedor(id) {
+  await sb('PATCH', `usuarios?id=eq.${id}`, { activo: false });
+  return { ok: true };
+}
+
 // ─── Obtener productos ────────────────────────────────────────────────────────
-async function getProductos() {
+async function getProductos(tienda_id) {
+  if (tienda_id) {
+    return sb('GET', `productos?activo=eq.true&tienda_id=eq.${tienda_id}&order=nombre.asc`);
+  }
   return sb('GET', 'productos?activo=eq.true&order=nombre.asc');
 }
 
 // ─── Guardar producto (crear o actualizar) ────────────────────────────────────
-async function saveProducto(producto) {
+async function saveProducto(producto, tienda_id) {
   if (producto.id) {
     const { id, created_at, ...data } = producto;
     await sb('PATCH', `productos?id=eq.${id}`, data);
     return { ok: true };
   } else {
     const { id, created_at, updated_at, ...data } = producto;
+    if (tienda_id) data.tienda_id = tienda_id;
     const rows = await sb('POST', 'productos', data);
     return { ok: true, producto: rows[0] };
   }
 }
 
 // ─── Obtener ventas ───────────────────────────────────────────────────────────
-async function getVentas(fechaInicio, fechaFin) {
+async function getVentas(fechaInicio, fechaFin, tienda_id) {
   let query = 'ventas?order=created_at.desc';
+  if (tienda_id) query += `&tienda_id=eq.${tienda_id}`;
   if (fechaInicio) query += `&created_at=gte.${fechaInicio}`;
   if (fechaFin) query += `&created_at=lte.${fechaFin}T23:59:59`;
   const ventas = await sb('GET', query);
 
-  // Enriquecer con detalles
   const enriched = await Promise.all(ventas.map(async (v) => {
     const detalles = await sb('GET', `detalle_ventas?venta_id=eq.${v.id}`);
-    const prods = await getProductos();
+    const prods = await getProductos(tienda_id);
     const prodMap = Object.fromEntries(prods.map(p => [p.id, p.nombre]));
     return {
       ...v,
@@ -84,13 +131,12 @@ async function getVentas(fechaInicio, fechaFin) {
 }
 
 // ─── Registrar venta (el trigger DB descuenta el stock automáticamente) ───────
-async function registrarVenta({ usuario_id, items, metodo_pago = 'efectivo', origen = 'manual' }) {
+async function registrarVenta({ usuario_id, tienda_id, items, metodo_pago = 'efectivo', origen = 'manual' }) {
   if (!items || items.length === 0) throw new Error('La venta no tiene productos');
 
   const total = items.reduce((sum, i) => sum + i.precio_unitario * i.cantidad, 0);
 
-  // Crear cabecera de venta
-  const [venta] = await sb('POST', 'ventas', { usuario_id, total, metodo_pago, origen });
+  const [venta] = await sb('POST', 'ventas', { usuario_id, tienda_id, total, metodo_pago, origen });
 
   // Crear detalles (el trigger de la DB descuenta el stock)
   for (const item of items) {
@@ -106,9 +152,9 @@ async function registrarVenta({ usuario_id, items, metodo_pago = 'efectivo', ori
 }
 
 // ─── Registrar entrada de mercadería (trigger DB suma al stock) ───────────────
-async function registrarEntrada({ usuario_id, producto_id, cantidad, precio_costo, proveedor, origen = 'manual' }) {
+async function registrarEntrada({ usuario_id, tienda_id, producto_id, cantidad, precio_costo, proveedor, origen = 'manual' }) {
   await sb('POST', 'entradas_mercaderia', {
-    usuario_id, producto_id, cantidad, precio_costo, proveedor, origen,
+    usuario_id, tienda_id, producto_id, cantidad, precio_costo, proveedor, origen,
   });
   return { ok: true };
 }
@@ -133,7 +179,8 @@ function buscarProductoPorNombre(nombre, productos) {
 
 // ─── IA Chat principal ────────────────────────────────────────────────────────
 async function handleChat({ mensaje, usuario, historial = [] }) {
-  const productos = await getProductos();
+  const tienda_id = usuario?.tienda_id;
+  const productos = await getProductos(tienda_id);
 
   const hoy = new Date().toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -297,7 +344,7 @@ Nunca uses el formato <VENTA> o <ENTRADA> para preguntas generales.`;
             unidad: item.unidad || 'unidad',
             activo: true,
           };
-          const resultado = await saveProducto(nuevoProd);
+          const resultado = await saveProducto(nuevoProd, usuario?.tienda_id);
           prod = resultado.producto;
           // Recargar para tener el id correcto
           if (!prod) {
@@ -351,16 +398,20 @@ module.exports = async (req, res) => {
         result = await handleAuth(body);
         break;
 
+      case 'registro':
+        result = await registrarTienda(body);
+        break;
+
       case 'getProductos':
-        result = await getProductos();
+        result = await getProductos(body.tienda_id);
         break;
 
       case 'saveProducto':
-        result = await saveProducto(body.producto);
+        result = await saveProducto(body.producto, body.tienda_id);
         break;
 
       case 'getVentas':
-        result = await getVentas(body.fechaInicio, body.fechaFin);
+        result = await getVentas(body.fechaInicio, body.fechaFin, body.tienda_id);
         break;
 
       case 'registrarVenta':
@@ -371,6 +422,18 @@ module.exports = async (req, res) => {
         result = await registrarEntrada(body);
         break;
 
+      case 'getVendedores':
+        result = await getVendedores(body.tienda_id);
+        break;
+
+      case 'crearVendedor':
+        result = await crearVendedor(body);
+        break;
+
+      case 'desactivarVendedor':
+        result = await desactivarVendedor(body.id);
+        break;
+
       case 'chat': {
         const { respuesta, accion } = await handleChat(body);
 
@@ -379,6 +442,7 @@ module.exports = async (req, res) => {
           try {
             await registrarVenta({
               usuario_id: body.usuario?.id || null,
+              tienda_id: body.usuario?.tienda_id || null,
               items: accion.items,
               origen: 'voz',
             });
@@ -392,6 +456,7 @@ module.exports = async (req, res) => {
             for (const item of accion.items) {
               await registrarEntrada({
                 usuario_id: body.usuario?.id || null,
+                tienda_id: body.usuario?.tienda_id || null,
                 producto_id: item.producto_id,
                 cantidad: item.cantidad,
                 precio_costo: item.precio_costo,
