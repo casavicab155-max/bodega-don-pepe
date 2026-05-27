@@ -898,6 +898,29 @@ body {
       <div id="lista-ventas"><div class="loading-center"><div class="spinner"></div></div></div>
     </div>
 
+  <!-- EQUIPO -->
+    <div id="screen-equipo" class="screen">
+      <p class="section-title">Vendedores de tu tienda</p>
+      <div id="lista-vendedores"><div class="loading-center"><div class="spinner"></div></div></div>
+
+      <p class="section-title" style="margin-top:20px">Agregar vendedor</p>
+      <div class="card">
+        <div class="form-row">
+          <label class="form-lbl">Nombre</label>
+          <input type="text" id="vend-nombre" placeholder="Ej: María González" class="form-inp">
+        </div>
+        <div class="form-row" style="margin-top:10px">
+          <label class="form-lbl">Usuario</label>
+          <input type="text" id="vend-user" placeholder="Ej: maria" class="form-inp" autocomplete="off">
+        </div>
+        <div class="form-row" style="margin-top:10px">
+          <label class="form-lbl">Contraseña</label>
+          <input type="password" id="vend-pass" placeholder="Mínimo 6 caracteres" class="form-inp" autocomplete="off">
+        </div>
+        <button class="btn-primary" style="margin-top:14px" onclick="crearVendedor()" ontouchend="event.preventDefault();crearVendedor()">Agregar vendedor</button>
+      </div>
+    </div>
+
   </div><!-- /content -->
 
   <!-- Bottom nav -->
@@ -913,6 +936,9 @@ body {
     </button>
     <button class="nav-btn" onclick="navegar('reportes',this)">
       <span class="icon">📊</span>Reportes
+    </button>
+    <button class="nav-btn" id="nav-equipo" onclick="navegar('equipo',this)" style="display:none">
+      <span class="icon">👥</span>Equipo
     </button>
   </nav>
 </div>
@@ -1179,9 +1205,10 @@ async function iniciarApp() {
   document.getElementById('nav-nombre').textContent = estadoApp.usuario.nombre;
   document.getElementById('nav-rol').textContent = estadoApp.usuario.rol;
 
-  // Solo admin puede crear productos
+  // Solo admin puede crear productos y ver equipo
   if (estadoApp.usuario.rol === 'admin') {
     document.getElementById('btn-add-prod').style.display = 'flex';
+    document.getElementById('nav-equipo').style.display = 'flex';
   }
 
   // Fechas reporte por defecto
@@ -1641,6 +1668,7 @@ function navegar(pantalla, btn) {
   if (pantalla === 'ventas') actualizarSelectVentas();
   if (pantalla === 'reportes') cargarReportes();
   if (pantalla === 'inventario') renderInventario(document.getElementById('buscar-prod').value);
+  if (pantalla === 'equipo') cargarVendedores();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1665,6 +1693,77 @@ document.getElementById('btn-install').addEventListener('click', async () => {
   }
   _installPrompt = null;
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// EQUIPO — Gestión de vendedores
+// ═══════════════════════════════════════════════════════════════════
+async function cargarVendedores() {
+  const lista = document.getElementById('lista-vendedores');
+  lista.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const vendedores = await api({
+      action: 'getVendedores',
+      tienda_id: estadoApp.usuario.tienda_id,
+    });
+    if (!vendedores.length) {
+      lista.innerHTML = '<div style="text-align:center;color:var(--text2);padding:30px">No hay vendedores aún</div>';
+      return;
+    }
+    lista.innerHTML = vendedores.map(v => `
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--text)">${v.nombre}</div>
+          <div style="font-size:12px;color:var(--text2)">@${v.username}</div>
+        </div>
+        <button onclick="desactivarVendedor('${v.id}')" ontouchend="event.preventDefault();desactivarVendedor('${v.id}')"
+          style="background:none;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer">
+          Eliminar
+        </button>
+      </div>`).join('');
+  } catch(e) {
+    lista.innerHTML = `<div style="color:var(--red);padding:20px">Error: ${e.message}</div>`;
+  }
+}
+
+async function crearVendedor() {
+  const nombre = document.getElementById('vend-nombre').value.trim();
+  const username = document.getElementById('vend-user').value.trim();
+  const password = document.getElementById('vend-pass').value.trim();
+
+  if (!nombre) { toast('Escribe el nombre del vendedor', 'error'); return; }
+  if (!username) { toast('Escribe el usuario', 'error'); return; }
+  if (password.length < 6) { toast('La contraseña debe tener al menos 6 caracteres', 'error'); return; }
+
+  try {
+    const res = await api({
+      action: 'crearVendedor',
+      tienda_id: estadoApp.usuario.tienda_id,
+      nombre, username, password,
+    });
+    if (res.ok) {
+      toast('✅ Vendedor creado', 'success');
+      document.getElementById('vend-nombre').value = '';
+      document.getElementById('vend-user').value = '';
+      document.getElementById('vend-pass').value = '';
+      cargarVendedores();
+    } else {
+      toast('❌ ' + (res.error || 'Error al crear vendedor'), 'error');
+    }
+  } catch(e) {
+    toast('❌ ' + e.message, 'error');
+  }
+}
+
+async function desactivarVendedor(id) {
+  if (!confirm('¿Eliminar este vendedor?')) return;
+  try {
+    await api({ action: 'desactivarVendedor', id });
+    toast('Vendedor eliminado', 'success');
+    cargarVendedores();
+  } catch(e) {
+    toast('❌ ' + e.message, 'error');
+  }
+}
 
 // Service Worker
 if ('serviceWorker' in navigator) {
