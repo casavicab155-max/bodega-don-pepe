@@ -752,15 +752,42 @@ body {
   <div class="login-title">Bodega Don Pepe</div>
   <div class="login-sub">Gestión inteligente con IA</div>
   <div class="login-card">
-    <div class="form-group">
-      <label>Usuario</label>
-      <input type="text" id="inp-user" placeholder="admin" autocomplete="username">
+    <!-- TABS -->
+    <div style="display:flex;gap:0;margin-bottom:20px;border-radius:8px;overflow:hidden;border:1.5px solid var(--border)">
+      <button id="tab-login" onclick="switchTab('login')" style="flex:1;padding:10px;border:none;background:var(--text);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Ingresar</button>
+      <button id="tab-registro" onclick="switchTab('registro')" style="flex:1;padding:10px;border:none;background:var(--bg3);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Crear cuenta</button>
     </div>
-    <div class="form-group">
-      <label>Contraseña</label>
-      <input type="password" id="inp-pass" placeholder="••••••••" autocomplete="current-password">
+
+    <!-- LOGIN -->
+    <div id="form-login">
+      <div class="form-group">
+        <label>Usuario</label>
+        <input type="text" id="inp-user" placeholder="admin" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="inp-pass" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn-primary" id="btn-login" ontouchend="event.preventDefault();login()">Ingresar</button>
     </div>
-    <button class="btn-primary" id="btn-login">Ingresar</button>
+
+    <!-- REGISTRO -->
+    <div id="form-registro" style="display:none">
+      <div class="form-group">
+        <label>Nombre de tu bodega</label>
+        <input type="text" id="reg-tienda" placeholder="Ej: Bodega Los Reyes">
+      </div>
+      <div class="form-group">
+        <label>Tu nombre de usuario</label>
+        <input type="text" id="reg-user" placeholder="Ej: juanperez">
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="reg-pass" placeholder="Mínimo 6 caracteres">
+      </div>
+      <button class="btn-primary" id="btn-registro" ontouchend="event.preventDefault();registrar()">Crear cuenta</button>
+    </div>
+
     <div id="login-error">❌ Usuario o contraseña incorrectos</div>
   </div>
 </div>
@@ -1067,6 +1094,47 @@ function badgeVencimiento(dias) {
 document.getElementById('btn-login').addEventListener('click', login);
 document.getElementById('inp-pass').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
 
+function switchTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('form-login').style.display = isLogin ? 'block' : 'none';
+  document.getElementById('form-registro').style.display = isLogin ? 'none' : 'block';
+  document.getElementById('tab-login').style.background = isLogin ? 'var(--text)' : 'var(--bg3)';
+  document.getElementById('tab-login').style.color = isLogin ? '#fff' : 'var(--text2)';
+  document.getElementById('tab-registro').style.background = isLogin ? 'var(--bg3)' : 'var(--text)';
+  document.getElementById('tab-registro').style.color = isLogin ? 'var(--text2)' : '#fff';
+  document.getElementById('login-error').style.display = 'none';
+}
+
+async function registrar() {
+  const nombre_tienda = document.getElementById('reg-tienda').value.trim();
+  const username = document.getElementById('reg-user').value.trim();
+  const password = document.getElementById('reg-pass').value.trim();
+
+  if (!nombre_tienda) { toast('Escribe el nombre de tu bodega', 'error'); return; }
+  if (!username) { toast('Escribe tu nombre de usuario', 'error'); return; }
+  if (password.length < 6) { toast('La contraseña debe tener al menos 6 caracteres', 'error'); return; }
+
+  const btn = document.getElementById('btn-registro');
+  btn.disabled = true;
+  btn.textContent = 'Creando cuenta...';
+
+  try {
+    const res = await api({ action: 'registro', nombre_tienda, nombre_admin: username, password });
+    if (res.ok) {
+      estadoApp.usuario = res.user;
+      iniciarApp();
+      toast('✅ ¡Bienvenido! Tu bodega está lista', 'success');
+    } else {
+      toast('❌ ' + (res.error || 'Error al crear cuenta'), 'error');
+    }
+  } catch {
+    toast('❌ Error de conexión', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Crear cuenta';
+  }
+}
+
 async function login() {
   const username = document.getElementById('inp-user').value.trim();
   const password = document.getElementById('inp-pass').value.trim();
@@ -1131,7 +1199,7 @@ async function iniciarApp() {
 // ═══════════════════════════════════════════════════════════════════
 async function cargarProductos() {
   try {
-    estadoApp.productos = await api({ action: 'getProductos' });
+    estadoApp.productos = await api({ action: 'getProductos', tienda_id: estadoApp.usuario?.tienda_id });
     const filtroActual = document.getElementById('buscar-prod')?.value || '';
     renderInventario(filtroActual);
   } catch (e) {
@@ -1261,7 +1329,7 @@ async function guardarProducto() {
   btn.textContent = 'Guardando...';
 
   try {
-    await api({ action: 'saveProducto', producto });
+    await api({ action: 'saveProducto', producto, tienda_id: estadoApp.usuario?.tienda_id });
     await cargarProductos();
     actualizarSelectVentas();
     cerrarModal();
@@ -1372,6 +1440,7 @@ async function cobrar() {
     await api({
       action: 'registrarVenta',
       usuario_id: estadoApp.usuario.id,
+      tienda_id: estadoApp.usuario.tienda_id,
       items: estadoApp.carrito,
       metodo_pago: document.getElementById('sel-pago').value,
       origen: 'manual',
@@ -1530,7 +1599,7 @@ async function cargarReportes() {
   document.getElementById('stat-alertas').textContent = alertas;
 
   try {
-    const ventas = await api({ action: 'getVentas', fechaInicio: desde, fechaFin: hasta });
+    const ventas = await api({ action: 'getVentas', fechaInicio: desde, fechaFin: hasta, tienda_id: estadoApp.usuario?.tienda_id });
 
     document.getElementById('stat-ventas').textContent = ventas.length;
     const totalIngresos = ventas.reduce((s, v) => s + Number(v.total), 0);
