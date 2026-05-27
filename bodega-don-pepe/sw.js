@@ -68,6 +68,23 @@ async function registrarTienda({ nombre_tienda, nombre_admin, password }) {
   };
 }
 
+// ─── Gestión de vendedores ────────────────────────────────────────────────────
+async function getVendedores(tienda_id) {
+  return sb('GET', `usuarios?tienda_id=eq.${tienda_id}&rol=eq.vendedor&activo=eq.true&order=nombre.asc`);
+}
+
+async function crearVendedor({ tienda_id, nombre, username, password }) {
+  const existente = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}`);
+  if (existente && existente.length > 0) return { ok: false, error: 'Ese usuario ya existe' };
+  await sb('POST', 'usuarios', { username, password_hash: password, nombre, rol: 'vendedor', tienda_id, activo: true });
+  return { ok: true };
+}
+
+async function desactivarVendedor(id) {
+  await sb('PATCH', `usuarios?id=eq.${id}`, { activo: false });
+  return { ok: true };
+}
+
 // ─── Obtener productos ────────────────────────────────────────────────────────
 async function getProductos(tienda_id) {
   if (tienda_id) {
@@ -403,6 +420,18 @@ module.exports = async (req, res) => {
 
       case 'registrarEntrada':
         result = await registrarEntrada(body);
+        break;
+
+      case 'getVendedores':
+        result = await getVendedores(body.tienda_id);
+        break;
+
+      case 'crearVendedor':
+        result = await crearVendedor(body);
+        break;
+
+      case 'desactivarVendedor':
+        result = await desactivarVendedor(body.id);
         break;
 
       case 'chat': {
