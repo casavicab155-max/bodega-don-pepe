@@ -3,6 +3,7 @@
 // Netlify Functions + Anthropic Claude + Supabase
 // =============================================
 
+const bcrypt = require('bcryptjs');
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://eoyvzkargirskdttuxmn.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY ||
@@ -34,7 +35,19 @@ async function handleAuth({ username, password }) {
   const rows = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}&activo=eq.true`);
   if (!rows || rows.length === 0) return { ok: false, error: 'Usuario no encontrado' };
   const user = rows[0];
-  if (user.password_hash !== password) return { ok: false, error: 'Contraseña incorrecta' };
+  // Comparar con bcrypt si el hash empieza con $2, sino comparación directa (legacy)
+  let passwordOk = false;
+  if (user.password_hash && user.password_hash.startsWith('$2')) {
+    passwordOk = await bcrypt.compare(password, user.password_hash);
+  } else {
+    passwordOk = user.password_hash === password;
+    // Si coincide, migrar a bcrypt automáticamente
+    if (passwordOk) {
+      const hashed = await bcrypt.hash(password, 10);
+      await sb('PATCH', `usuarios?id=eq.${user.id}`, { password_hash: hashed });
+    }
+  }
+  if (!passwordOk) return { ok: false, error: 'Contraseña incorrecta' };
   return {
     ok: true,
     user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol, tienda_id: user.tienda_id },
@@ -54,9 +67,10 @@ async function registrarTienda({ nombre_tienda, nombre_admin, password }) {
   // Crear tienda
   const [tienda] = await sb('POST', 'tiendas', { nombre: nombre_tienda, propietario: nombre_admin, plan: 'basico' });
   // Crear usuario admin de esa tienda
+  const hashedPassword = await bcrypt.hash(password, 10);
   const [usuario] = await sb('POST', 'usuarios', {
     username: nombre_admin,
-    password_hash: password,
+    password_hash: hashedPassword,
     nombre: nombre_admin,
     rol: 'admin',
     tienda_id: tienda.id,
@@ -76,7 +90,8 @@ async function getVendedores(tienda_id) {
 async function crearVendedor({ tienda_id, nombre, username, password }) {
   const existente = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}`);
   if (existente && existente.length > 0) return { ok: false, error: 'Ese usuario ya existe' };
-  await sb('POST', 'usuarios', { username, password_hash: password, nombre, rol: 'vendedor', tienda_id, activo: true });
+  const hashedVend = await bcrypt.hash(password, 10);
+  await sb('POST', 'usuarios', { username, password_hash: hashedVend, nombre, rol: 'vendedor', tienda_id, activo: true });
   return { ok: true };
 }
 
