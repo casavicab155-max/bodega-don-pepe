@@ -1510,16 +1510,26 @@ async function enviarChat() {
     });
 
     typing.remove();
-    const esTrans = res.accion?.tipo === 'venta' || res.accion?.tipo === 'entrada';
-    const burbuja = agregarBurbuja('ia', res.respuesta, false, esTrans);
+    // Acciones que modifican el inventario o ventas
+    const accionesQueModifican = ['venta', 'entrada', 'ajuste', 'precio', 'minimo', 'anular'];
+    const huboAccion = accionesQueModifican.includes(res.accion?.tipo);
+    const burbuja = agregarBurbuja('ia', res.respuesta, false, huboAccion);
 
     estadoApp.historialChat.push({ role: 'assistant', content: res.respuesta });
 
-    // Recargar productos si hubo una acción
-    if (esTrans) {
+    // Recargar productos si hubo una acción que modifica datos
+    if (huboAccion) {
       await cargarProductos();
       actualizarSelectVentas();
-      toast(res.accion.tipo === 'venta' ? '✅ Venta registrada' : '✅ Entrada registrada', 'success');
+      const mensajesToast = {
+        venta: '✅ Venta registrada',
+        entrada: '✅ Entrada registrada',
+        ajuste: '✅ Inventario actualizado',
+        precio: '✅ Precio actualizado',
+        minimo: '✅ Alerta configurada',
+        anular: '✅ Venta anulada',
+      };
+      toast(mensajesToast[res.accion.tipo] || '✅ Listo', 'success');
     }
 
 
