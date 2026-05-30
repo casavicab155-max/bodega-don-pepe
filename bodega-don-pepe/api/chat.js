@@ -174,6 +174,63 @@ async function registrarEntrada({ usuario_id, tienda_id, producto_id, cantidad, 
   return { ok: true };
 }
 
+// ─── Ajustar stock manualmente ───────────────────────────────────────────────
+async function ajustarStock({ producto_id, nuevo_stock, desactivar = false }) {
+  if (desactivar) {
+    await sb('PATCH', `productos?id=eq.${producto_id}`, { activo: false });
+  } else {
+    await sb('PATCH', `productos?id=eq.${producto_id}`, { stock: nuevo_stock });
+  }
+  return { ok: true };
+}
+
+// ─── Cambiar precio de un producto ───────────────────────────────────────────
+async function cambiarPrecio({ producto_id, nuevo_precio }) {
+  await sb('PATCH', `productos?id=eq.${producto_id}`, { precio_venta: nuevo_precio });
+  return { ok: true };
+}
+
+// ─── Cambiar stock mínimo ────────────────────────────────────────────────────
+async function cambiarStockMinimo({ producto_id, nuevo_minimo }) {
+  await sb('PATCH', `productos?id=eq.${producto_id}`, { stock_minimo: nuevo_minimo });
+  return { ok: true };
+}
+
+// ─── Anular última venta de la tienda ────────────────────────────────────────
+async function anularUltimaVenta({ tienda_id }) {
+  const ventas = await sb('GET', `ventas?tienda_id=eq.${tienda_id}&order=created_at.desc&limit=1`);
+  if (!ventas || ventas.length === 0) return { ok: false, error: 'No hay ventas para anular' };
+  const venta = ventas[0];
+  // Devolver stock de cada item
+  const detalles = await sb('GET', `detalle_ventas?venta_id=eq.${venta.id}`);
+  for (const d of detalles) {
+    const [prod] = await sb('GET', `productos?id=eq.${d.producto_id}`);
+    if (prod) {
+      await sb('PATCH', `productos?id=eq.${d.producto_id}`, { stock: prod.stock + d.cantidad });
+    }
+  }
+  // Eliminar detalles y venta
+  await sb('DELETE', `detalle_ventas?venta_id=eq.${venta.id}`);
+  await sb('DELETE', `ventas?id=eq.${venta.id}`);
+  return { ok: true, total: venta.total };
+}
+
+// ─── Resumen de ventas (hoy, semana) ─────────────────────────────────────────
+async function resumenVentas({ tienda_id, periodo = 'hoy' }) {
+  const ahora = new Date();
+  let desde;
+  if (periodo === 'hoy') {
+    desde = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()).toISOString();
+  } else if (periodo === 'semana') {
+    desde = new Date(ahora.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  } else if (periodo === 'mes') {
+    desde = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString();
+  }
+  const ventas = await sb('GET', `ventas?tienda_id=eq.${tienda_id}&created_at=gte.${desde}`);
+  const total = ventas.reduce((s, v) => s + parseFloat(v.total), 0);
+  return { ok: true, cantidad: ventas.length, total: total.toFixed(2) };
+}
+
 // ─── Buscar producto por nombre (para comandos de voz) ───────────────────────
 function buscarProductoPorNombre(nombre, productos) {
   const n = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -204,14 +261,35 @@ async function handleChat({ mensaje, usuario, historial = [] }) {
       ? ` | Vence: ${new Date(p.fecha_vencimiento).toLocaleDateString('es-PE')}`
       : '';
     const alerta = p.stock <= p.stock_minimo ? ' ⚠️ STOCK BAJO' : '';
-    return `- ${p.nombre} | Stock: ${p.stock} ${p.unidad}s | Precio: S/${p.precio_venta}${venc}${alerta}`;
+    const costo = p.precio_costo ? ` | Costo: S/${p.precio_costo}` : '';
+    return `- ${p.nombre} | Stock: ${p.stock} ${p.unidad}s | Precio: S/${p.precio_venta}${costo}${venc}${alerta}`;
   }).join('\n');
+
+  // Calcular valor total del inventario y ganancia potencial
+  const valorInventario = productos.reduce((s, p) => s + (p.precio_venta * p.stock), 0).toFixed(2);
+  const costoInventario = productos.reduce((s, p) => s + ((p.precio_costo || 0) * p.stock), 0).toFixed(2);
+  const gananciaPotencial = (valorInventario - costoInventario).toFixed(2);
+
+  // Resumen de ventas de hoy
+  let ventasHoyTexto = '';
+  try {
+    const hoyIni = new Date(); hoyIni.setHours(0,0,0,0);
+    const ventasHoy = await sb('GET', `ventas?tienda_id=eq.${tienda_id}&created_at=gte.${hoyIni.toISOString()}`);
+    const totalHoy = ventasHoy.reduce((s, v) => s + parseFloat(v.total), 0).toFixed(2);
+    ventasHoyTexto = `Ventas de hoy: ${ventasHoy.length} ventas, total S/${totalHoy}`;
+  } catch { ventasHoyTexto = ''; }
 
   const systemPrompt = `Eres el asistente de voz de la Bodega Don Pepe, una bodega peruana.
 Hoy es ${hoy}. Atiendes a ${usuario?.nombre || 'el vendedor'} (${usuario?.rol || 'vendedor'}).
 
 === INVENTARIO ACTUAL ===
 ${inventarioTexto}
+
+=== DATOS DE LA TIENDA ===
+Valor del inventario (a precio venta): S/${valorInventario}
+Costo del inventario: S/${costoInventario}
+Ganancia potencial si vendes todo: S/${gananciaPotencial}
+${ventasHoyTexto}
 
 === TU COMPORTAMIENTO ===
 Hablas en español peruano, de forma natural y conversacional. Eres amigable y directo.
@@ -253,6 +331,49 @@ REGLA IMPORTANTE para entradas de mercadería:
 - unidad: si no se menciona, usa "unidad" por defecto
 - categoria: si no se menciona, usa "general" por defecto
 - Cuando el producto es nuevo y tienes precio_venta, incluye todos los datos para crearlo
+
+Cuando el usuario quiere AJUSTAR STOCK o ELIMINAR UN PRODUCTO (frases como "elimina", "quita", "borra", "se perdieron", "se dañaron", "ajusta el stock", "corrije el stock", "ya no tengo", "pon en cero", etc.),
+responde EXCLUSIVAMENTE en este formato JSON:
+
+<AJUSTE>
+{
+  "mensaje": "Listo, [descripción de lo que hice].",
+  "nombre_buscado": "nombre del producto",
+  "tipo": "stock" o "eliminar",
+  "nuevo_stock": número_o_null
+}
+</AJUSTE>
+
+REGLAS para AJUSTE:
+- tipo "eliminar": desactiva el producto del inventario completamente
+- tipo "stock": actualiza el stock al número exacto indicado. Ejemplos: "pon en cero las cocas" → nuevo_stock: 0, "se dañaron 5 leches" → nuevo_stock: stock_actual - 5
+- Si el usuario dice "elimina el producto X" o "ya no vendo X" → tipo "eliminar"
+- Si el usuario dice "se perdieron/dañaron N unidades" → tipo "stock" con nuevo_stock calculado
+- Si no queda claro cuántas unidades quedan, PREGUNTA antes de responder con <AJUSTE>
+
+Cuando el usuario quiere CAMBIAR EL PRECIO de un producto (frases como "sube la coca a 3 soles", "cambia el precio de X a Y", "la leche ahora cuesta"),
+responde EXCLUSIVAMENTE así:
+<PRECIO>
+{"mensaje": "Listo, [producto] ahora cuesta S/[precio].", "nombre_buscado": "nombre", "nuevo_precio": número}
+</PRECIO>
+
+Cuando el usuario quiere CAMBIAR EL STOCK MÍNIMO / alerta (frases como "avísame cuando queden menos de X", "alerta de X cuando baje a N"),
+responde EXCLUSIVAMENTE así:
+<MINIMO>
+{"mensaje": "Listo, te avisaré cuando [producto] baje de [N].", "nombre_buscado": "nombre", "nuevo_minimo": número}
+</MINIMO>
+
+Cuando el usuario quiere ANULAR LA ÚLTIMA VENTA (frases como "anula la última venta", "me equivoqué en la venta", "devuelve esa venta", "borra la venta"),
+responde EXCLUSIVAMENTE así:
+<ANULAR>
+{"mensaje": "Listo, anulé la última venta y devolví el stock."}
+</ANULAR>
+
+Para CONSULTAS sobre ventas, valor de inventario, ganancia, productos más vendidos, qué está por vencer o qué tiene stock bajo:
+USA LOS DATOS que tienes arriba en "DATOS DE LA TIENDA" e "INVENTARIO ACTUAL" y responde en texto normal o con tabla. NO inventes números, usa los datos reales que te di.
+
+Para CÁLCULOS de vuelto o totales (frases como "cobré con 50", "cuánto es 3 cocas y 2 panes"):
+Calcula y responde en texto normal. Ej: "Son S/7.50. Tu vuelto de S/50 es S/42.50."
 
 Para cualquier otra consulta responde en texto normal. Sé conciso: máximo 3 oraciones.
 
@@ -392,6 +513,70 @@ Nunca uses el formato <VENTA> o <ENTRADA> para preguntas generales.`;
     }
   }
 
+  // ── Parsear respuesta de AJUSTE ─────────────────────────────────────────────
+  const ajusteMatch = texto.match(/<AJUSTE>([\s\S]*?)<\/AJUSTE>/);
+  if (ajusteMatch) {
+    try {
+      const parsed = JSON.parse(ajusteMatch[1].trim());
+      const prod = buscarProductoPorNombre(parsed.nombre_buscado, productos);
+      if (!prod) {
+        return {
+          respuesta: `No encontré "${parsed.nombre_buscado}" en el inventario.`,
+          accion: null,
+        };
+      }
+      return {
+        respuesta: parsed.mensaje,
+        accion: {
+          tipo: 'ajuste',
+          producto_id: prod.id,
+          nombre_producto: prod.nombre,
+          tipo_ajuste: parsed.tipo,
+          nuevo_stock: parsed.nuevo_stock,
+        },
+      };
+    } catch (e) {
+      console.error('Error parseando AJUSTE:', e);
+    }
+  }
+
+  // ── Parsear PRECIO ──────────────────────────────────────────────────────────
+  const precioMatch = texto.match(/<PRECIO>([\s\S]*?)<\/PRECIO>/);
+  if (precioMatch) {
+    try {
+      const parsed = JSON.parse(precioMatch[1].trim());
+      const prod = buscarProductoPorNombre(parsed.nombre_buscado, productos);
+      if (!prod) return { respuesta: `No encontré "${parsed.nombre_buscado}" en el inventario.`, accion: null };
+      return {
+        respuesta: parsed.mensaje,
+        accion: { tipo: 'precio', producto_id: prod.id, nuevo_precio: parsed.nuevo_precio },
+      };
+    } catch (e) { console.error('Error PRECIO:', e); }
+  }
+
+  // ── Parsear MINIMO ──────────────────────────────────────────────────────────
+  const minimoMatch = texto.match(/<MINIMO>([\s\S]*?)<\/MINIMO>/);
+  if (minimoMatch) {
+    try {
+      const parsed = JSON.parse(minimoMatch[1].trim());
+      const prod = buscarProductoPorNombre(parsed.nombre_buscado, productos);
+      if (!prod) return { respuesta: `No encontré "${parsed.nombre_buscado}" en el inventario.`, accion: null };
+      return {
+        respuesta: parsed.mensaje,
+        accion: { tipo: 'minimo', producto_id: prod.id, nuevo_minimo: parsed.nuevo_minimo },
+      };
+    } catch (e) { console.error('Error MINIMO:', e); }
+  }
+
+  // ── Parsear ANULAR ──────────────────────────────────────────────────────────
+  const anularMatch = texto.match(/<ANULAR>([\s\S]*?)<\/ANULAR>/);
+  if (anularMatch) {
+    try {
+      const parsed = JSON.parse(anularMatch[1].trim());
+      return { respuesta: parsed.mensaje, accion: { tipo: 'anular' } };
+    } catch (e) { console.error('Error ANULAR:', e); }
+  }
+
   // ── Respuesta normal ────────────────────────────────────────────────────────
   return { respuesta: texto, accion: null };
 }
@@ -449,6 +634,10 @@ module.exports = async (req, res) => {
         result = await desactivarVendedor(body.id);
         break;
 
+      case 'ajustarStock':
+        result = await ajustarStock(body);
+        break;
+
       case 'chat': {
         const { respuesta, accion } = await handleChat(body);
 
@@ -483,6 +672,26 @@ module.exports = async (req, res) => {
           }
         }
 
+        // Ejecutar acciones que modifican datos
+        try {
+          if (accion?.tipo === 'ajuste') {
+            await ajustarStock({
+              producto_id: accion.producto_id,
+              nuevo_stock: accion.nuevo_stock,
+              desactivar: accion.tipo_ajuste === 'eliminar',
+            });
+          } else if (accion?.tipo === 'precio') {
+            await cambiarPrecio({ producto_id: accion.producto_id, nuevo_precio: accion.nuevo_precio });
+          } else if (accion?.tipo === 'minimo') {
+            await cambiarStockMinimo({ producto_id: accion.producto_id, nuevo_minimo: accion.nuevo_minimo });
+          } else if (accion?.tipo === 'anular') {
+            const r = await anularUltimaVenta({ tienda_id: body.usuario?.tienda_id });
+            if (!r.ok) return res.status(200).json({ respuesta: r.error || 'No se pudo anular la venta' });
+          }
+        } catch (e) {
+          return res.status(200).json({ respuesta: `Error: ${e.message}` });
+        }
+
         result = { respuesta, accion };
         break;
       }
@@ -493,7 +702,11 @@ module.exports = async (req, res) => {
 
     return res.status(200).json(result);
   } catch (err) {
-    console.error('[BodegaAPI]', err);
+    console.error('[BodegaAPI ERROR]', {
+      timestamp: new Date().toISOString(),
+      error: err.message,
+      stack: err.stack,
+    });
     return res.status(500).json({ error: err.message });
   }
 };
