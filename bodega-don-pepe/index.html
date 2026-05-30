@@ -1511,7 +1511,7 @@ async function enviarChat() {
 
     typing.remove();
     // Acciones que modifican el inventario o ventas
-    const accionesQueModifican = ['venta', 'entrada', 'ajuste', 'precio', 'minimo', 'anular'];
+    const accionesQueModifican = ['venta', 'entrada', 'editar', 'anular'];
     const huboAccion = accionesQueModifican.includes(res.accion?.tipo);
     const burbuja = agregarBurbuja('ia', res.respuesta, false, huboAccion);
 
@@ -1524,9 +1524,7 @@ async function enviarChat() {
       const mensajesToast = {
         venta: '✅ Venta registrada',
         entrada: '✅ Entrada registrada',
-        ajuste: '✅ Inventario actualizado',
-        precio: '✅ Precio actualizado',
-        minimo: '✅ Alerta configurada',
+        editar: '✅ Inventario actualizado',
         anular: '✅ Venta anulada',
       };
       toast(mensajesToast[res.accion.tipo] || '✅ Listo', 'success');
