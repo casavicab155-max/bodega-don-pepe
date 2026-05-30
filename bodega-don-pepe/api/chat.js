@@ -184,15 +184,16 @@ async function ajustarStock({ producto_id, nuevo_stock, desactivar = false }) {
   return { ok: true };
 }
 
-// ─── Cambiar precio de un producto ───────────────────────────────────────────
-async function cambiarPrecio({ producto_id, nuevo_precio }) {
-  await sb('PATCH', `productos?id=eq.${producto_id}`, { precio_venta: nuevo_precio });
-  return { ok: true };
-}
-
-// ─── Cambiar stock mínimo ────────────────────────────────────────────────────
-async function cambiarStockMinimo({ producto_id, nuevo_minimo }) {
-  await sb('PATCH', `productos?id=eq.${producto_id}`, { stock_minimo: nuevo_minimo });
+// ─── Editar cualquier campo de un producto ───────────────────────────────────
+async function editarProducto({ producto_id, campos }) {
+  // campos es un objeto con solo los campos a actualizar
+  const permitidos = ['nombre', 'categoria', 'precio_venta', 'precio_costo', 'stock', 'stock_minimo', 'unidad', 'fecha_vencimiento'];
+  const data = {};
+  for (const k of permitidos) {
+    if (campos[k] !== undefined && campos[k] !== null) data[k] = campos[k];
+  }
+  if (Object.keys(data).length === 0) return { ok: false, error: 'No hay campos para actualizar' };
+  await sb('PATCH', `productos?id=eq.${producto_id}`, data);
   return { ok: true };
 }
 
@@ -332,36 +333,46 @@ REGLA IMPORTANTE para entradas de mercadería:
 - categoria: si no se menciona, usa "general" por defecto
 - Cuando el producto es nuevo y tienes precio_venta, incluye todos los datos para crearlo
 
-Cuando el usuario quiere AJUSTAR STOCK o ELIMINAR UN PRODUCTO (frases como "elimina", "quita", "borra", "se perdieron", "se dañaron", "ajusta el stock", "corrije el stock", "ya no tengo", "pon en cero", etc.),
-responde EXCLUSIVAMENTE en este formato JSON:
-
-<AJUSTE>
+Cuando el usuario quiere EDITAR, AJUSTAR STOCK o ELIMINAR uno o varios productos existentes, responde EXCLUSIVAMENTE así:
+<EDITAR>
 {
-  "mensaje": "Listo, [descripción de lo que hice].",
-  "nombre_buscado": "nombre del producto",
-  "tipo": "stock" o "eliminar",
-  "nuevo_stock": número_o_null
+  "mensaje": "Listo, [descripción del cambio].",
+  "productos": [
+    {
+      "nombre_buscado": "nombre del producto",
+      "eliminar": true_o_false,
+      "campos": {
+        "stock": número_o_omitir,
+        "precio_venta": número_o_omitir,
+        "precio_costo": número_o_omitir,
+        "nombre": "texto_o_omitir",
+        "categoria": "texto_o_omitir",
+        "unidad": "texto_o_omitir",
+        "stock_minimo": número_o_omitir,
+        "fecha_vencimiento": "YYYY-MM-DD_o_omitir"
+      }
+    }
+  ]
 }
-</AJUSTE>
+</EDITAR>
 
-REGLAS para AJUSTE:
-- tipo "eliminar": desactiva el producto del inventario completamente
-- tipo "stock": actualiza el stock al número exacto indicado. Ejemplos: "pon en cero las cocas" → nuevo_stock: 0, "se dañaron 5 leches" → nuevo_stock: stock_actual - 5
-- Si el usuario dice "elimina el producto X" o "ya no vendo X" → tipo "eliminar"
-- Si el usuario dice "se perdieron/dañaron N unidades" → tipo "stock" con nuevo_stock calculado
-- Si no queda claro cuántas unidades quedan, PREGUNTA antes de responder con <AJUSTE>
+REGLAS para EDITAR:
+- Puedes editar VARIOS productos a la vez (por eso "productos" es una lista). Ej: "se dañaron 3 leches y 2 panes" → dos objetos en la lista.
+- En "campos" SOLO incluye lo que el usuario pidió cambiar, omite el resto.
+- "eliminar": true → desactiva el producto del inventario. Solo úsalo si el usuario quiere eliminar/quitar el producto completo.
+- Para STOCK: calcula el valor final. "se dañaron 5 leches" → campos: {"stock": stock_actual - 5}. "pon en cero las cocas" → {"stock": 0}. "ajusta arroz a 20" → {"stock": 20}.
+- Ejemplos de otros campos:
+  · "sube la coca a 3 soles" → {"precio_venta": 3}
+  · "el costo de la leche es 2.50" → {"precio_costo": 2.50}
+  · "cámbiale el nombre a X" → {"nombre": "X"}
+  · "la leche vence el 30 de julio" → {"fecha_vencimiento": "2026-07-30"}
+  · "avísame cuando queden menos de 5 panes" → {"stock_minimo": 5}
+  · "cambia la categoría a bebidas" → {"categoria": "bebidas"}
+- Si no queda claro cuántas unidades quedan tras una merma, PREGUNTA antes.
 
-Cuando el usuario quiere CAMBIAR EL PRECIO de un producto (frases como "sube la coca a 3 soles", "cambia el precio de X a Y", "la leche ahora cuesta"),
-responde EXCLUSIVAMENTE así:
-<PRECIO>
-{"mensaje": "Listo, [producto] ahora cuesta S/[precio].", "nombre_buscado": "nombre", "nuevo_precio": número}
-</PRECIO>
-
-Cuando el usuario quiere CAMBIAR EL STOCK MÍNIMO / alerta (frases como "avísame cuando queden menos de X", "alerta de X cuando baje a N"),
-responde EXCLUSIVAMENTE así:
-<MINIMO>
-{"mensaje": "Listo, te avisaré cuando [producto] baje de [N].", "nombre_buscado": "nombre", "nuevo_minimo": número}
-</MINIMO>
+CONFIRMACIÓN OBLIGATORIA para acciones destructivas:
+- Si el usuario quiere ELIMINAR un producto o poner stock en 0, y NO ha confirmado explícitamente en este mensaje, PRIMERO pregunta en texto normal: "¿Seguro que quieres eliminar [producto]? Confírmame y lo hago." NO uses <EDITAR> todavía.
+- Solo usa <EDITAR> con eliminar:true cuando el usuario ya confirmó (dijo "sí", "confirmo", "elimínalo", "dale", etc.).
 
 Cuando el usuario quiere ANULAR LA ÚLTIMA VENTA (frases como "anula la última venta", "me equivoqué en la venta", "devuelve esa venta", "borra la venta"),
 responde EXCLUSIVAMENTE así:
@@ -513,59 +524,29 @@ Nunca uses el formato <VENTA> o <ENTRADA> para preguntas generales.`;
     }
   }
 
-  // ── Parsear respuesta de AJUSTE ─────────────────────────────────────────────
-  const ajusteMatch = texto.match(/<AJUSTE>([\s\S]*?)<\/AJUSTE>/);
-  if (ajusteMatch) {
+  // ── Parsear EDITAR (múltiples productos) ────────────────────────────────────
+  const editarMatch = texto.match(/<EDITAR>([\s\S]*?)<\/EDITAR>/);
+  if (editarMatch) {
     try {
-      const parsed = JSON.parse(ajusteMatch[1].trim());
-      const prod = buscarProductoPorNombre(parsed.nombre_buscado, productos);
-      if (!prod) {
-        return {
-          respuesta: `No encontré "${parsed.nombre_buscado}" en el inventario.`,
-          accion: null,
-        };
+      const parsed = JSON.parse(editarMatch[1].trim());
+      const ediciones = [];
+      for (const item of parsed.productos) {
+        const prod = buscarProductoPorNombre(item.nombre_buscado, productos);
+        if (!prod) {
+          return { respuesta: `No encontré "${item.nombre_buscado}" en el inventario.`, accion: null };
+        }
+        ediciones.push({
+          producto_id: prod.id,
+          nombre_producto: prod.nombre,
+          eliminar: item.eliminar === true,
+          campos: item.campos || {},
+        });
       }
       return {
         respuesta: parsed.mensaje,
-        accion: {
-          tipo: 'ajuste',
-          producto_id: prod.id,
-          nombre_producto: prod.nombre,
-          tipo_ajuste: parsed.tipo,
-          nuevo_stock: parsed.nuevo_stock,
-        },
+        accion: { tipo: 'editar', ediciones },
       };
-    } catch (e) {
-      console.error('Error parseando AJUSTE:', e);
-    }
-  }
-
-  // ── Parsear PRECIO ──────────────────────────────────────────────────────────
-  const precioMatch = texto.match(/<PRECIO>([\s\S]*?)<\/PRECIO>/);
-  if (precioMatch) {
-    try {
-      const parsed = JSON.parse(precioMatch[1].trim());
-      const prod = buscarProductoPorNombre(parsed.nombre_buscado, productos);
-      if (!prod) return { respuesta: `No encontré "${parsed.nombre_buscado}" en el inventario.`, accion: null };
-      return {
-        respuesta: parsed.mensaje,
-        accion: { tipo: 'precio', producto_id: prod.id, nuevo_precio: parsed.nuevo_precio },
-      };
-    } catch (e) { console.error('Error PRECIO:', e); }
-  }
-
-  // ── Parsear MINIMO ──────────────────────────────────────────────────────────
-  const minimoMatch = texto.match(/<MINIMO>([\s\S]*?)<\/MINIMO>/);
-  if (minimoMatch) {
-    try {
-      const parsed = JSON.parse(minimoMatch[1].trim());
-      const prod = buscarProductoPorNombre(parsed.nombre_buscado, productos);
-      if (!prod) return { respuesta: `No encontré "${parsed.nombre_buscado}" en el inventario.`, accion: null };
-      return {
-        respuesta: parsed.mensaje,
-        accion: { tipo: 'minimo', producto_id: prod.id, nuevo_minimo: parsed.nuevo_minimo },
-      };
-    } catch (e) { console.error('Error MINIMO:', e); }
+    } catch (e) { console.error('Error EDITAR:', e); }
   }
 
   // ── Parsear ANULAR ──────────────────────────────────────────────────────────
@@ -638,6 +619,10 @@ module.exports = async (req, res) => {
         result = await ajustarStock(body);
         break;
 
+      case 'editarProducto':
+        result = await editarProducto(body);
+        break;
+
       case 'chat': {
         const { respuesta, accion } = await handleChat(body);
 
@@ -674,16 +659,14 @@ module.exports = async (req, res) => {
 
         // Ejecutar acciones que modifican datos
         try {
-          if (accion?.tipo === 'ajuste') {
-            await ajustarStock({
-              producto_id: accion.producto_id,
-              nuevo_stock: accion.nuevo_stock,
-              desactivar: accion.tipo_ajuste === 'eliminar',
-            });
-          } else if (accion?.tipo === 'precio') {
-            await cambiarPrecio({ producto_id: accion.producto_id, nuevo_precio: accion.nuevo_precio });
-          } else if (accion?.tipo === 'minimo') {
-            await cambiarStockMinimo({ producto_id: accion.producto_id, nuevo_minimo: accion.nuevo_minimo });
+          if (accion?.tipo === 'editar') {
+            for (const ed of accion.ediciones) {
+              if (ed.eliminar) {
+                await ajustarStock({ producto_id: ed.producto_id, desactivar: true });
+              } else {
+                await editarProducto({ producto_id: ed.producto_id, campos: ed.campos });
+              }
+            }
           } else if (accion?.tipo === 'anular') {
             const r = await anularUltimaVenta({ tienda_id: body.usuario?.tienda_id });
             if (!r.ok) return res.status(200).json({ respuesta: r.error || 'No se pudo anular la venta' });
@@ -702,11 +685,7 @@ module.exports = async (req, res) => {
 
     return res.status(200).json(result);
   } catch (err) {
-    console.error('[BodegaAPI ERROR]', {
-      timestamp: new Date().toISOString(),
-      error: err.message,
-      stack: err.stack,
-    });
+    console.error('[BodegaAPI ERROR]', { timestamp: new Date().toISOString(), error: err.message, stack: err.stack });
     return res.status(500).json({ error: err.message });
   }
 };
