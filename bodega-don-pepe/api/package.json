@@ -1,0 +1,7 @@
+{
+  "name": "bodega-dona-api",
+  "version": "1.0.0",
+  "dependencies": {
+    "bcryptjs": "^2.4.3"
+  }
+}
