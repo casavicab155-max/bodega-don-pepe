@@ -884,8 +884,14 @@ body {
       <div class="stat-grid" id="stats-grid">
         <div class="stat-card"><div class="stat-value" id="stat-ventas">—</div><div class="stat-label">Ventas hoy</div></div>
         <div class="stat-card"><div class="stat-value" id="stat-ingresos">—</div><div class="stat-label">Ingresos hoy</div></div>
+        <div class="stat-card" id="stat-ganancia"><div class="stat-value">—</div><div class="stat-label">Ganancia hoy</div></div>
         <div class="stat-card"><div class="stat-value" id="stat-productos">—</div><div class="stat-label">Productos</div></div>
         <div class="stat-card"><div class="stat-value" id="stat-alertas">—</div><div class="stat-label">Alertas stock</div></div>
+        <div class="stat-card" style="grid-column:1/-1;border-left:3px solid var(--blue)">
+          <div style="font-size:11px;color:var(--text2);line-height:1.5" id="tooltip-ganancia">
+            💡 <strong>Ventas</strong> es todo lo que entró a tu caja. <strong>Ganancia</strong> es lo que te queda de verdad, después de descontar lo que te costó cada producto. <em>Ejemplo: vendiste una gaseosa a S/3 que te costó S/2 → tu venta fue S/3 pero ganaste S/1.</em>
+          </div>
+        </div>
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -896,6 +902,15 @@ body {
 
       <p class="section-title">Historial de ventas</p>
       <div id="lista-ventas"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+
+  <!-- FIADOS -->
+    <div id="screen-fiados" class="screen">
+      <p class="section-title">Clientes con deuda</p>
+      <div id="lista-fiados"><div class="loading-center"><div class="spinner"></div></div></div>
+      <div id="fiados-vacio" style="display:none;text-align:center;padding:40px;color:var(--text2)">
+        📒 No hay fiados pendientes
+      </div>
     </div>
 
   <!-- EQUIPO -->
@@ -936,6 +951,9 @@ body {
     </button>
     <button class="nav-btn" onclick="navegar('reportes',this)">
       <span class="icon">📊</span>Reportes
+    </button>
+    <button class="nav-btn" id="nav-fiados" onclick="navegar('fiados',this)">
+      <span class="icon">📒</span>Fiados
     </button>
     <button class="nav-btn" id="nav-equipo" onclick="navegar('equipo',this)" style="display:none">
       <span class="icon">👥</span>Equipo
@@ -1511,7 +1529,7 @@ async function enviarChat() {
 
     typing.remove();
     // Acciones que modifican el inventario o ventas
-    const accionesQueModifican = ['venta', 'entrada', 'editar', 'anular'];
+    const accionesQueModifican = ['venta', 'entrada', 'editar', 'anular', 'fiado', 'pago_fiado'];
     const huboAccion = accionesQueModifican.includes(res.accion?.tipo);
     const burbuja = agregarBurbuja('ia', res.respuesta, false, huboAccion);
 
@@ -1526,6 +1544,8 @@ async function enviarChat() {
         entrada: '✅ Entrada registrada',
         editar: '✅ Inventario actualizado',
         anular: '✅ Venta anulada',
+        fiado: '✅ Fiado registrado',
+        pago_fiado: '✅ Pago registrado',
       };
       toast(mensajesToast[res.accion.tipo] || '✅ Listo', 'success');
     }
@@ -1619,6 +1639,7 @@ function toggleVoz() {
 // REPORTES
 // ═══════════════════════════════════════════════════════════════════
 async function cargarReportes() {
+  cargarGananciasHoy();
   document.getElementById('lista-ventas').innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
   document.getElementById('stat-ventas').textContent = '⏳';
   document.getElementById('stat-ingresos').textContent = '⏳';
@@ -1677,6 +1698,7 @@ function navegar(pantalla, btn) {
   if (pantalla === 'reportes') cargarReportes();
   if (pantalla === 'inventario') renderInventario(document.getElementById('buscar-prod').value);
   if (pantalla === 'equipo') cargarVendedores();
+  if (pantalla === 'fiados') cargarFiados();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1771,6 +1793,94 @@ async function desactivarVendedor(id) {
   } catch(e) {
     toast('❌ ' + e.message, 'error');
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FIADOS
+// ═══════════════════════════════════════════════════════════════════
+async function cargarFiados() {
+  const lista = document.getElementById('lista-fiados');
+  const vacio = document.getElementById('fiados-vacio');
+  lista.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const fiados = await api({ action: 'getFiados', tienda_id: estadoApp.usuario?.tienda_id });
+    if (!fiados || fiados.length === 0) {
+      lista.innerHTML = '';
+      if (vacio) vacio.style.display = 'block';
+      return;
+    }
+    if (vacio) vacio.style.display = 'none';
+    const totalDeuda = fiados.reduce((s, f) => s + f.total_deuda, 0).toFixed(2);
+    lista.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;color:var(--text2)">Total pendiente</span>
+        <span style="font-size:18px;font-weight:800;color:var(--red)">S/${totalDeuda}</span>
+      </div>
+      ${fiados.map(f => `
+      <div class="card" style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--text)">${f.cliente}</div>
+            <div style="font-size:12px;color:var(--red);margin-top:2px">Debe S/${f.total_deuda.toFixed(2)}</div>
+          </div>
+          <button onclick="mostrarPagoFiado('${f.cliente}', ${f.total_deuda})"
+            ontouchend="event.preventDefault();mostrarPagoFiado('${f.cliente}', ${f.total_deuda})"
+            style="background:var(--text);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">
+            💰 Cobrar
+          </button>
+        </div>
+      </div>`).join('')}
+    `;
+  } catch(e) {
+    lista.innerHTML = `<div style="color:var(--red);padding:20px">Error: ${e.message}</div>`;
+  }
+}
+
+async function mostrarPagoFiado(cliente, deuda) {
+  const monto = prompt(`¿Cuánto paga ${cliente}? (Debe S/${deuda.toFixed(2)})`);
+  if (!monto || isNaN(parseFloat(monto))) return;
+  try {
+    const res = await api({
+      action: 'registrarPagoFiado',
+      tienda_id: estadoApp.usuario?.tienda_id,
+      cliente_nombre: cliente,
+      monto: parseFloat(monto),
+    });
+    if (res.ok) {
+      toast(`✅ Pago de S/${res.totalPagado} registrado`, 'success');
+      cargarFiados();
+    }
+  } catch(e) {
+    toast('❌ ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// REPORTES CON GANANCIA
+// ═══════════════════════════════════════════════════════════════════
+async function cargarGananciasHoy() {
+  try {
+    const hoy = new Date().toISOString().split('T')[0];
+    const r = await api({
+      action: 'getReporteGanancias',
+      tienda_id: estadoApp.usuario?.tienda_id,
+      fechaInicio: hoy, fechaFin: hoy,
+    });
+    if (!r.ok) return;
+    // Inyectar en el panel de stats si existe
+    const statsEl = document.getElementById('stat-ganancia');
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <div class="stat-value">S/${r.ganancia}</div>
+        <div class="stat-label">Ganancia hoy</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${r.margen_pct}% margen</div>
+      `;
+    }
+    const tooltipEl = document.getElementById('tooltip-ganancia');
+    if (tooltipEl) {
+      tooltipEl.textContent = '💡 Ventas es todo lo que entró a tu caja. Ganancia es lo que te queda de verdad, después de descontar lo que te costó cada producto. Ejemplo: vendiste una gaseosa a S/3 que te costó S/2 → tu venta fue S/3 pero ganaste S/1.';
+    }
+  } catch(e) { console.warn('Error ganancia:', e); }
 }
 
 // Service Worker
