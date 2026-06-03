@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Bodega Don Pepe">
 <title>Bodega Don Pepe 🏪</title>
 <link rel="manifest" href="/manifest.json">
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <link rel="apple-touch-icon" href="/icon-192.svg">
 
 <style>
@@ -298,6 +299,94 @@ body {
   cursor: pointer;
   font-size: 18px;
   display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Escáner de código de barras ───────────────────────────────── */
+.scan-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 500;
+  flex-direction: column;
+}
+.scan-overlay.open { display: flex; }
+.scan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  padding-top: calc(16px + var(--safe-top));
+  background: rgba(0,0,0,0.8);
+  color: #fff;
+}
+.scan-header-title { font-size: 16px; font-weight: 600; }
+.scan-close-btn {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: #fff;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation;
+}
+#scan-viewport { flex: 1; position: relative; overflow: hidden; }
+#scan-viewport video { width: 100%; height: 100%; object-fit: cover; }
+.scan-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.scan-frame-box {
+  width: 240px; height: 160px;
+  border: 3px solid #f97316;
+  border-radius: 16px;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
+  position: relative;
+}
+.scan-frame-box::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: #f97316;
+  border-radius: 2px;
+  animation: scanLine 1.8s ease-in-out infinite;
+}
+@keyframes scanLine {
+  0%   { top: 0; }
+  50%  { top: calc(100% - 3px); }
+  100% { top: 0; }
+}
+.scan-hint {
+  color: #fff;
+  font-size: 13px;
+  text-align: center;
+  padding: 16px;
+  padding-bottom: calc(16px + var(--safe-bot));
+  background: rgba(0,0,0,0.8);
+}
+/* Ícono cámara dentro de inputs */
+.input-scan-wrap { position: relative; }
+.input-scan-wrap input { padding-right: 42px; }
+.btn-scan-input {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--text2);
+  font-size: 20px;
+  line-height: 1;
+  touch-action: manipulation;
 }
 
 .form-row { margin-bottom: 14px; }
@@ -811,7 +900,12 @@ body {
     <!-- INVENTARIO -->
     <div id="screen-inventario" class="screen active">
       <div class="search-bar">
-        <input type="search" id="buscar-prod" placeholder="🔍 Buscar producto...">
+        <div class="input-scan-wrap" style="flex:1">
+          <input type="search" id="buscar-prod" placeholder="🔍 Buscar producto...">
+          <button class="btn-scan-input" onclick="abrirEscaner('inventario')" ontouchend="event.preventDefault();abrirEscaner('inventario')" title="Buscar por código">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h2v10H7zM11 7h1v10h-1zM14 7h3v10h-3z"/></svg>
+          </button>
+        </div>
         <button class="btn-icon" onclick="abrirModalProducto(null)" id="btn-add-prod" style="display:none">+</button>
       </div>
       <div id="lista-productos"><div class="loading-center"><div class="spinner"></div></div></div>
@@ -820,10 +914,20 @@ body {
     <!-- VENTAS -->
     <div id="screen-ventas" class="screen">
       <p class="section-title">Agregar producto</p>
-      <div class="agregar-form">
-        <select id="sel-producto"><option value="">-- Producto --</option></select>
-        <input type="number" id="inp-cantidad" value="1" min="1">
-        <button class="btn-icon" onclick="agregarAlCarrito()">+</button>
+      <div style="position:relative;margin-bottom:8px">
+        <div class="input-scan-wrap">
+          <input type="search" id="buscar-venta" placeholder="🔍 Buscar producto..." autocomplete="off"
+            oninput="filtrarProductosVenta(this.value)" style="width:100%;padding:11px 42px 11px 14px;border-radius:var(--radius);border:1.5px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px">
+          <button class="btn-scan-input" onclick="abrirEscaner('ventas')" ontouchend="event.preventDefault();abrirEscaner('ventas')" title="Escanear código">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h2v10H7zM11 7h1v10h-1zM14 7h3v10h-3z"/></svg>
+          </button>
+        </div>
+        <div id="dropdown-venta" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);z-index:100;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.1)"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input type="hidden" id="sel-producto" value="">
+        <input type="number" id="inp-cantidad" value="1" min="1" style="width:80px;padding:10px;border-radius:var(--radius);border:1.5px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;text-align:center">
+        <button class="btn-icon" onclick="agregarAlCarrito()" ontouchend="event.preventDefault();agregarAlCarrito()" style="flex:1">+ Agregar</button>
       </div>
 
       <p class="section-title">Carrito</p>
@@ -1034,6 +1138,15 @@ body {
       <label>📅 Fecha de vencimiento</label>
       <input type="date" id="prod-vencimiento">
     </div>
+    <div class="form-row">
+      <label>🔖 Código de barras</label>
+      <div class="input-scan-wrap">
+        <input type="text" id="prod-barras" placeholder="Escanea o escribe el código" autocomplete="off">
+        <button class="btn-scan-input" onclick="abrirEscaner('modal-producto')" ontouchend="event.preventDefault();abrirEscaner('modal-producto')" title="Escanear">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
+        </button>
+      </div>
+    </div>
     <button class="btn-primary" onclick="guardarProducto()" ontouchend="event.preventDefault();guardarProducto()" id="btn-guardar-prod">Guardar</button>
     <button class="btn-danger" id="btn-desactivar-prod" onclick="desactivarProducto()" style="display:none">Desactivar producto</button>
     <input type="hidden" id="prod-id">
@@ -1057,6 +1170,20 @@ body {
   <span>📲 Instalar app</span>
   <button id="btn-install">Instalar</button>
   <button class="close-banner" onclick="document.getElementById('install-banner').style.display='none'">✕</button>
+</div>
+
+<!-- ── OVERLAY ESCÁNER ────────────────────────────────────────────── -->
+<div class="scan-overlay" id="scan-overlay">
+  <div class="scan-header">
+    <span class="scan-header-title" id="scan-titulo">Escanear código de barras</span>
+    <button class="scan-close-btn" onclick="cerrarEscaner()">✕</button>
+  </div>
+  <div id="scan-viewport">
+    <div class="scan-frame">
+      <div class="scan-frame-box"></div>
+    </div>
+  </div>
+  <div class="scan-hint">Apunta la cámara al código de barras del producto</div>
 </div>
 
 <!-- ── MODAL CAMBIAR CONTRASEÑA ───────────────────────────────────── -->
@@ -1396,6 +1523,7 @@ function abrirModalProducto(id) {
   document.getElementById('prod-stock').value = prod?.stock ?? 0;
   document.getElementById('prod-stock-min').value = prod?.stock_minimo ?? 5;
   document.getElementById('prod-vencimiento').value = prod?.fecha_vencimiento || '';
+  document.getElementById('prod-barras').value = prod?.codigo_barras || '';
   document.getElementById('btn-desactivar-prod').style.display = prod ? 'block' : 'none';
 
   modal.classList.add('open');
@@ -1430,6 +1558,7 @@ async function guardarProducto() {
     stock,
     stock_minimo: parseInt(document.getElementById('prod-stock-min').value) || 5,
     fecha_vencimiento: document.getElementById('prod-vencimiento').value || null,
+    codigo_barras: document.getElementById('prod-barras').value.trim() || null,
     activo: true,
   };
 
@@ -1468,16 +1597,39 @@ async function desactivarProducto() {
 // VENTAS
 // ═══════════════════════════════════════════════════════════════════
 function actualizarSelectVentas() {
-  const sel = document.getElementById('sel-producto');
-  const prods = estadoApp.productos.filter(p => p.stock > 0);
-  sel.innerHTML = '<option value="">-- Seleccionar producto --</option>' +
-    prods.map(p => `<option value="${p.id}">${p.nombre} (S/${Number(p.precio_venta).toFixed(2)}) — ${p.stock} en stock</option>`).join('');
+  // ya no usamos <select>, el buscador se alimenta de estadoApp.productos
+}
+
+function filtrarProductosVenta(texto) {
+  const dd = document.getElementById('dropdown-venta');
+  if (!texto || texto.length < 1) { dd.style.display = 'none'; return; }
+  const q = texto.toLowerCase();
+  const matches = estadoApp.productos.filter(p =>
+    p.stock > 0 && (p.nombre.toLowerCase().includes(q) || (p.codigo_barras && p.codigo_barras.includes(q)))
+  ).slice(0, 8);
+  if (!matches.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = matches.map(p => `
+    <div onclick="seleccionarProductoVenta('${p.id}')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;touch-action:manipulation">
+      <div>
+        <div style="font-size:14px;font-weight:600">${p.nombre}</div>
+        <div style="font-size:12px;color:var(--text2)">${p.stock} en stock</div>
+      </div>
+      <div style="font-weight:700;color:var(--text)">${formatPEN(p.precio_venta)}</div>
+    </div>`).join('');
+  dd.style.display = 'block';
+}
+
+function seleccionarProductoVenta(prodId) {
+  document.getElementById('sel-producto').value = prodId;
+  const prod = estadoApp.productos.find(p => p.id === prodId);
+  if (prod) document.getElementById('buscar-venta').value = prod.nombre;
+  document.getElementById('dropdown-venta').style.display = 'none';
 }
 
 function agregarAlCarrito() {
   const prodId = document.getElementById('sel-producto').value;
   const cantidad = parseInt(document.getElementById('inp-cantidad').value) || 1;
-  if (!prodId) return toast('Selecciona un producto', 'error');
+  if (!prodId) return toast('Busca y selecciona un producto', 'error');
 
   const prod = estadoApp.productos.find(p => p.id === prodId);
   if (!prod) return;
@@ -1498,6 +1650,8 @@ function agregarAlCarrito() {
 
   document.getElementById('inp-cantidad').value = 1;
   document.getElementById('sel-producto').value = '';
+  document.getElementById('buscar-venta').value = '';
+  document.getElementById('dropdown-venta').style.display = 'none';
   renderCarrito();
 }
 
@@ -1961,6 +2115,106 @@ async function cargarGananciasHoy() {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(console.warn);
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// ESCÁNER DE CÓDIGO DE BARRAS
+// ═══════════════════════════════════════════════════════════════════
+let _scanner = null;
+let _scanContexto = null; // 'inventario' | 'ventas' | 'modal-producto'
+
+function abrirEscaner(contexto) {
+  _scanContexto = contexto;
+  const titulos = {
+    'inventario':    'Buscar por código',
+    'ventas':        'Escanear para agregar',
+    'modal-producto':'Escanear código del producto',
+  };
+  document.getElementById('scan-titulo').textContent = titulos[contexto] || 'Escanear';
+  document.getElementById('scan-overlay').classList.add('open');
+
+  if (_scanner) {
+    _scanner.resume().catch(() => {});
+    return;
+  }
+
+  _scanner = new Html5Qrcode('scan-viewport');
+  _scanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 240, height: 160 }, aspectRatio: 1.5 },
+    (codigo) => onCodigoEscaneado(codigo),
+    () => {}
+  ).catch(err => {
+    console.warn('Cámara no disponible:', err);
+    toast('No se pudo acceder a la cámara', 'error');
+    cerrarEscaner();
+  });
+}
+
+function cerrarEscaner() {
+  document.getElementById('scan-overlay').classList.remove('open');
+  if (_scanner) {
+    _scanner.stop().then(() => {
+      _scanner.clear();
+      _scanner = null;
+    }).catch(() => { _scanner = null; });
+  }
+}
+
+function onCodigoEscaneado(codigo) {
+  cerrarEscaner();
+
+  if (_scanContexto === 'modal-producto') {
+    document.getElementById('prod-barras').value = codigo;
+    toast('✅ Código: ' + codigo);
+    return;
+  }
+
+  // Buscar producto por código de barras
+  const prod = estadoApp.productos.find(p => p.codigo_barras === codigo);
+
+  if (_scanContexto === 'inventario') {
+    const inp = document.getElementById('buscar-prod');
+    if (prod) {
+      inp.value = prod.nombre;
+      renderInventario(prod.nombre);
+      toast('✅ ' + prod.nombre);
+    } else {
+      inp.value = codigo;
+      renderInventario(codigo);
+      toast('Código no encontrado: ' + codigo, 'error');
+    }
+    return;
+  }
+
+  if (_scanContexto === 'ventas') {
+    if (!prod) {
+      toast('Producto no registrado. Agrégalo en inventario primero.', 'error');
+      return;
+    }
+    if (prod.stock <= 0) {
+      toast(`${prod.nombre} sin stock`, 'error');
+      return;
+    }
+    // Agregar directamente al carrito
+    const existente = estadoApp.carrito.find(i => i.producto_id === prod.id);
+    if (existente) {
+      if (prod.stock <= existente.cantidad) { toast('Stock insuficiente', 'error'); return; }
+      existente.cantidad += 1;
+    } else {
+      estadoApp.carrito.push({ producto_id: prod.id, nombre_producto: prod.nombre, cantidad: 1, precio_unitario: prod.precio_venta });
+    }
+    renderCarrito();
+    toast('✅ ' + prod.nombre + ' agregado');
+  }
+}
+
+// Cerrar dropdown venta al tocar fuera
+document.addEventListener('click', e => {
+  if (!e.target.closest('#buscar-venta') && !e.target.closest('#dropdown-venta')) {
+    const dd = document.getElementById('dropdown-venta');
+    if (dd) dd.style.display = 'none';
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // CAMBIAR NOMBRE DE TIENDA

@@ -147,7 +147,7 @@ async function ajustarStock({ producto_id, nuevo_stock, desactivar = false }) {
   return { ok: true };
 }
 async function editarProducto({ producto_id, campos }) {
-  const permitidos = ['nombre', 'categoria', 'precio_venta', 'precio_costo', 'stock', 'stock_minimo', 'unidad', 'fecha_vencimiento'];
+  const permitidos = ['nombre', 'categoria', 'precio_venta', 'precio_costo', 'stock', 'stock_minimo', 'unidad', 'fecha_vencimiento', 'codigo_barras'];
   const data = {};
   for (const k of permitidos) {
     if (campos[k] !== undefined && campos[k] !== null) data[k] = campos[k];
