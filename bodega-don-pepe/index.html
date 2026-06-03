@@ -1531,6 +1531,8 @@ function abrirModalProducto(id) {
 
 function cerrarModal() {
   document.getElementById('modal-producto').classList.remove('open');
+  const tag = document.getElementById('catalogo-tag');
+  if (tag) tag.remove();
 }
 
 document.getElementById('modal-producto').addEventListener('click', e => {
@@ -1568,6 +1570,7 @@ async function guardarProducto() {
 
   try {
     await api({ action: 'saveProducto', producto, tienda_id: estadoApp.usuario?.tienda_id });
+    intentarGuardarEnCatalogo(producto); // alimenta catálogo global sin bloquear
     await cargarProductos();
     actualizarSelectVentas();
     cerrarModal();
@@ -2165,7 +2168,7 @@ function onCodigoEscaneado(codigo) {
 
   if (_scanContexto === 'modal-producto') {
     document.getElementById('prod-barras').value = codigo;
-    toast('✅ Código: ' + codigo);
+    await autoLlenarDesdeCatalogo(codigo);
     return;
   }
 
@@ -2206,6 +2209,65 @@ function onCodigoEscaneado(codigo) {
     renderCarrito();
     toast('✅ ' + prod.nombre + ' agregado');
   }
+}
+
+// ─── Catálogo global ─────────────────────────────────────────────────────────
+async function autoLlenarDesdeCatalogo(codigo) {
+  const tag = document.getElementById('catalogo-tag');
+  if (tag) tag.remove();
+
+  // Indicador de búsqueda
+  const barrasInp = document.getElementById('prod-barras');
+  barrasInp.placeholder = 'Buscando en catálogo...';
+
+  try {
+    const res = await api({ action: 'buscarCatalogo', codigo_barras: codigo });
+
+    if (res.ok && res.producto) {
+      const p = res.producto;
+      // Solo llenar campos que estén vacíos (no pisar lo que ya escribió)
+      if (!document.getElementById('prod-nombre').value)
+        document.getElementById('prod-nombre').value = p.nombre;
+      if (document.getElementById('prod-cat').value === 'general' || !document.getElementById('prod-cat').value)
+        document.getElementById('prod-cat').value = p.categoria || 'general';
+      if (document.getElementById('prod-unidad').value === 'unidad' || !document.getElementById('prod-unidad').value)
+        document.getElementById('prod-unidad').value = p.unidad || 'unidad';
+
+      const fuente = res.fuente === 'dona' ? '📦 Catálogo Dona' : '🌐 Open Food Facts';
+      const hint = document.createElement('div');
+      hint.id = 'catalogo-tag';
+      hint.style.cssText = 'font-size:12px;color:var(--green);margin-top:6px;display:flex;align-items:center;gap:4px';
+      hint.innerHTML = `✅ ${fuente}${p.marca ? ' · ' + p.marca : ''} — Solo falta precio y stock`;
+      barrasInp.parentElement.parentElement.appendChild(hint);
+
+      // Enfocar precio para que el bodeguero complete lo que falta
+      setTimeout(() => document.getElementById('prod-precio').focus(), 100);
+    } else {
+      const hint = document.createElement('div');
+      hint.id = 'catalogo-tag';
+      hint.style.cssText = 'font-size:12px;color:var(--text2);margin-top:6px';
+      hint.textContent = '🆕 Producto nuevo — completa los datos y queda en el catálogo';
+      barrasInp.parentElement.parentElement.appendChild(hint);
+      setTimeout(() => document.getElementById('prod-nombre').focus(), 100);
+    }
+  } catch {
+    // sin conexión, no bloqueamos
+  } finally {
+    barrasInp.placeholder = 'Escanea o escribe el código';
+  }
+}
+
+// Al guardar un producto con código de barras, alimentar el catálogo global
+async function intentarGuardarEnCatalogo(producto) {
+  if (!producto.codigo_barras || !producto.nombre) return;
+  api({
+    action: 'guardarEnCatalogo',
+    codigo_barras: producto.codigo_barras,
+    nombre: producto.nombre,
+    marca: null,
+    categoria: producto.categoria,
+    unidad: producto.unidad,
+  }).catch(() => {});
 }
 
 // Cerrar dropdown venta al tocar fuera

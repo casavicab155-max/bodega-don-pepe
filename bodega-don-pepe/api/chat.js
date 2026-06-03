@@ -121,6 +121,77 @@ async function cambiarPassword({ usuario_id, password_actual, nueva_password, ta
   return { ok: true };
 }
 
+// ─── Catálogo global de códigos de barras ────────────────────────────────────
+const CATEGORIA_MAP = {
+  'beverages': 'bebidas', 'drinks': 'bebidas', 'waters': 'bebidas', 'juices': 'bebidas',
+  'snacks': 'snacks', 'chips': 'snacks', 'crackers': 'snacks',
+  'dairies': 'lacteos', 'dairy': 'lacteos', 'milk': 'lacteos', 'yogurts': 'lacteos',
+  'breads': 'panaderia', 'bakery': 'panaderia',
+  'cleaning': 'limpieza', 'hygiene': 'limpieza',
+  'groceries': 'abarrotes', 'cereals': 'abarrotes', 'pastas': 'abarrotes',
+};
+
+function mapCategoria(tags = []) {
+  for (const tag of tags) {
+    const key = tag.replace('en:', '').toLowerCase();
+    if (CATEGORIA_MAP[key]) return CATEGORIA_MAP[key];
+  }
+  return 'general';
+}
+
+function mapUnidad(quantity = '') {
+  const q = quantity.toLowerCase();
+  if (q.includes('ml') || q.includes('l ') || q.includes('lt')) return 'botella';
+  if (q.includes('kg') || q.includes('g ') || q.includes('gr')) return 'kg';
+  if (q.includes('pack') || q.includes('paq')) return 'paquete';
+  return 'unidad';
+}
+
+async function buscarCatalogo({ codigo_barras }) {
+  if (!codigo_barras) return { ok: false, error: 'Código requerido' };
+
+  // 1. Buscar en catálogo propio
+  const local = await sb('GET', `catalogo_global?codigo_barras=eq.${encodeURIComponent(codigo_barras)}`);
+  if (local && local.length > 0) {
+    return { ok: true, fuente: 'dona', producto: local[0] };
+  }
+
+  // 2. Fallback: Open Food Facts (gratuito, sin API key)
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${codigo_barras}?fields=product_name,brands,categories_tags,quantity`, {
+      headers: { 'User-Agent': 'Dona-Bodega/1.0 (contacto@dona.pe)' },
+    });
+    if (r.ok) {
+      const data = await r.json();
+      if (data.status === 1 && data.product) {
+        const p = data.product;
+        const nombre = (p.product_name || '').trim();
+        if (nombre) {
+          const entrada = {
+            codigo_barras,
+            nombre,
+            marca: (p.brands || '').split(',')[0].trim() || null,
+            categoria: mapCategoria(p.categories_tags || []),
+            unidad: mapUnidad(p.quantity || ''),
+          };
+          // Guardar para la próxima vez (ignorar error si ya existe)
+          await sb('POST', 'catalogo_global', entrada).catch(() => {});
+          return { ok: true, fuente: 'openfoodfacts', producto: entrada };
+        }
+      }
+    }
+  } catch (_) {}
+
+  return { ok: false, error: 'Producto no encontrado en el catálogo' };
+}
+
+async function guardarEnCatalogo({ codigo_barras, nombre, marca, categoria, unidad }) {
+  if (!codigo_barras || !nombre) return { ok: false };
+  await sb('POST', 'catalogo_global', { codigo_barras, nombre, marca: marca || null, categoria: categoria || 'general', unidad: unidad || 'unidad' })
+    .catch(() => sb('PATCH', `catalogo_global?codigo_barras=eq.${encodeURIComponent(codigo_barras)}`, { nombre, marca, categoria, unidad }));
+  return { ok: true };
+}
+
 // ─── Productos ────────────────────────────────────────────────────────────────
 async function getProductos(tienda_id) {
   if (tienda_id) return sb('GET', `productos?activo=eq.true&tienda_id=eq.${tienda_id}&order=nombre.asc`);
@@ -654,6 +725,8 @@ module.exports = async (req, res) => {
       case 'desactivarVendedor': result = await desactivarVendedor(body.id); break;
       case 'cambiarPassword':      result = await cambiarPassword(body); break;
       case 'cambiarNombreTienda':  result = await cambiarNombreTienda(body); break;
+      case 'buscarCatalogo':       result = await buscarCatalogo(body); break;
+      case 'guardarEnCatalogo':    result = await guardarEnCatalogo(body); break;
       case 'ajustarStock':   result = await ajustarStock(body); break;
       case 'editarProducto': result = await editarProducto(body); break;
       case 'getFiados':      result = await getFiados(body.tienda_id); break;
