@@ -46,9 +46,11 @@ async function handleAuth({ username, password }) {
     }
   }
   if (!passwordOk) return { ok: false, error: 'Contraseña incorrecta' };
+  const tiendas = await sb('GET', `tiendas?id=eq.${user.tienda_id}`);
+  const nombre_tienda = tiendas?.[0]?.nombre || '';
   return {
     ok: true,
-    user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol, tienda_id: user.tienda_id },
+    user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol, tienda_id: user.tienda_id, nombre_tienda },
   };
 }
 
@@ -67,6 +69,14 @@ async function registrarTienda({ nombre_tienda, nombre_admin, password }) {
     user: { id: usuario.id, username: usuario.username, nombre: usuario.nombre, rol: usuario.rol, tienda_id: tienda.id },
     tienda: { id: tienda.id, nombre: tienda.nombre },
   };
+}
+
+// ─── Cambiar nombre de tienda ─────────────────────────────────────────────────
+async function cambiarNombreTienda({ tienda_id, nuevo_nombre, solicitante_rol }) {
+  if (solicitante_rol !== 'admin') return { ok: false, error: 'Solo el admin puede cambiar el nombre de la tienda' };
+  if (!nuevo_nombre || nuevo_nombre.trim().length < 2) return { ok: false, error: 'El nombre debe tener al menos 2 caracteres' };
+  await sb('PATCH', `tiendas?id=eq.${tienda_id}`, { nombre: nuevo_nombre.trim() });
+  return { ok: true, nombre_tienda: nuevo_nombre.trim() };
 }
 
 // ─── Gestión de vendedores ────────────────────────────────────────────────────
@@ -642,7 +652,8 @@ module.exports = async (req, res) => {
       case 'getVendedores':  result = await getVendedores(body.tienda_id); break;
       case 'crearVendedor':  result = await crearVendedor(body); break;
       case 'desactivarVendedor': result = await desactivarVendedor(body.id); break;
-      case 'cambiarPassword':    result = await cambiarPassword(body); break;
+      case 'cambiarPassword':      result = await cambiarPassword(body); break;
+      case 'cambiarNombreTienda':  result = await cambiarNombreTienda(body); break;
       case 'ajustarStock':   result = await ajustarStock(body); break;
       case 'editarProducto': result = await editarProducto(body); break;
       case 'getFiados':      result = await getFiados(body.tienda_id); break;

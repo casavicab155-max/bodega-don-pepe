@@ -44,10 +44,20 @@ async function handleAuth({ username, password }) {
   const user = rows[0];
   // En producción usar bcrypt; por ahora comparación directa
   if (user.password_hash !== password) return { ok: false, error: 'Contraseña incorrecta' };
+  const tiendas = await sb('GET', `tiendas?id=eq.${user.tienda_id}`);
+  const nombre_tienda = tiendas?.[0]?.nombre || '';
   return {
     ok: true,
-    user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol },
+    user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol, tienda_id: user.tienda_id, nombre_tienda },
   };
+}
+
+// ─── Cambiar nombre de tienda ─────────────────────────────────────────────────
+async function cambiarNombreTienda({ tienda_id, nuevo_nombre, solicitante_rol }) {
+  if (solicitante_rol !== 'admin') return { ok: false, error: 'Solo el admin puede cambiar el nombre de la tienda' };
+  if (!nuevo_nombre || nuevo_nombre.trim().length < 2) return { ok: false, error: 'El nombre debe tener al menos 2 caracteres' };
+  await sb('PATCH', `tiendas?id=eq.${tienda_id}`, { nombre: nuevo_nombre.trim() });
+  return { ok: true, nombre_tienda: nuevo_nombre.trim() };
 }
 
 // ─── Obtener productos ────────────────────────────────────────────────────────
@@ -351,6 +361,10 @@ exports.handler = async (event) => {
 
       case 'cambiarPassword':
         result = await cambiarPassword(body);
+        break;
+
+      case 'cambiarNombreTienda':
+        result = await cambiarNombreTienda(body);
         break;
 
       case 'chat': {

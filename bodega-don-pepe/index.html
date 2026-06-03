@@ -797,7 +797,7 @@ body {
 
   <!-- Top bar -->
   <div class="topbar">
-    <div class="topbar-title">🏪 Don Pepe</div>
+    <div class="topbar-title" id="topbar-tienda">🏪 Don Pepe</div>
     <div class="topbar-user">
       <strong id="nav-nombre" onclick="abrirModalPassword(null)" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Cambiar contraseña">—</strong>
       <span id="nav-rol">—</span>
@@ -915,6 +915,18 @@ body {
 
   <!-- EQUIPO -->
     <div id="screen-equipo" class="screen">
+      <p class="section-title">Tu tienda</p>
+      <div class="card" style="margin-bottom:16px">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:8px">Nombre de la tienda</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="inp-nombre-tienda" class="form-inp" style="flex:1" placeholder="Nombre de tu bodega">
+          <button onclick="guardarNombreTienda()" ontouchend="event.preventDefault();guardarNombreTienda()"
+            style="background:var(--text);color:#fff;border:none;border-radius:var(--radius);padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;touch-action:manipulation">
+            Guardar
+          </button>
+        </div>
+      </div>
+
       <p class="section-title">Vendedores de tu tienda</p>
       <div id="lista-vendedores"><div class="loading-center"><div class="spinner"></div></div></div>
 
@@ -1272,6 +1284,9 @@ async function iniciarApp() {
   document.getElementById('app').style.display = 'flex';
   document.getElementById('nav-nombre').textContent = estadoApp.usuario.nombre;
   document.getElementById('nav-rol').textContent = estadoApp.usuario.rol;
+  if (estadoApp.usuario.nombre_tienda) {
+    document.getElementById('topbar-tienda').textContent = '🏪 ' + estadoApp.usuario.nombre_tienda;
+  }
 
   // Solo admin puede crear productos y ver equipo
   if (estadoApp.usuario.rol === 'admin') {
@@ -1747,7 +1762,10 @@ function navegar(pantalla, btn) {
   if (pantalla === 'ventas') actualizarSelectVentas();
   if (pantalla === 'reportes') cargarReportes();
   if (pantalla === 'inventario') renderInventario(document.getElementById('buscar-prod').value);
-  if (pantalla === 'equipo') cargarVendedores();
+  if (pantalla === 'equipo') {
+    document.getElementById('inp-nombre-tienda').value = estadoApp.usuario.nombre_tienda || '';
+    cargarVendedores();
+  }
   if (pantalla === 'fiados') cargarFiados();
 }
 
@@ -1942,6 +1960,31 @@ async function cargarGananciasHoy() {
 // Service Worker
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(console.warn);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CAMBIAR NOMBRE DE TIENDA
+// ═══════════════════════════════════════════════════════════════════
+async function guardarNombreTienda() {
+  const nuevo = document.getElementById('inp-nombre-tienda').value.trim();
+  if (!nuevo || nuevo.length < 2) { toast('Escribe un nombre válido', 'error'); return; }
+  try {
+    const res = await api({
+      action: 'cambiarNombreTienda',
+      tienda_id: estadoApp.usuario.tienda_id,
+      nuevo_nombre: nuevo,
+      solicitante_rol: estadoApp.usuario.rol,
+    });
+    if (res.ok) {
+      estadoApp.usuario.nombre_tienda = res.nombre_tienda;
+      document.getElementById('topbar-tienda').textContent = '🏪 ' + res.nombre_tienda;
+      toast('✅ Nombre actualizado');
+    } else {
+      toast('❌ ' + (res.error || 'Error al guardar'), 'error');
+    }
+  } catch {
+    toast('❌ Error de conexión', 'error');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
