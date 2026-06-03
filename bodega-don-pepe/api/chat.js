@@ -356,31 +356,37 @@ async function getReporteGanancias({ tienda_id, fechaInicio, fechaFin }) {
 }
 
 // ─── Buscar producto por nombre ───────────────────────────────────────────────
-function buscarProductoPorNombre(nombre, productos) {
-  const n = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  let found = productos.find(p => {
-    const pn = p.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    return pn === n;
+function buscarProductoPorNombre(nombre, productos, precio_unitario = null) {
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const n = norm(nombre);
+
+  // 1. Coincidencia exacta
+  let found = productos.find(p => norm(p.nombre) === n);
+  if (found) return found;
+
+  // 2. Recolectar candidatos con coincidencia parcial
+  let candidatos = productos.filter(p => {
+    const pn = norm(p.nombre);
+    return pn.includes(n) || n.includes(pn) || n.includes(pn.split(' ')[0]);
   });
-  if (!found) {
-    found = productos.find(p => {
-      const pn = p.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return pn.includes(n) || n.includes(pn.split(' ')[0]);
-    });
+
+  if (candidatos.length === 0) return null;
+  if (candidatos.length === 1) return candidatos[0];
+
+  // 3. Múltiples candidatos: desambiguar por precio_unitario si está disponible
+  if (precio_unitario && precio_unitario > 0) {
+    const TOLERANCIA = 0.10; // ±S/0.10
+    const porPrecio = candidatos.filter(p =>
+      Math.abs(parseFloat(p.precio_venta) - precio_unitario) <= TOLERANCIA
+    );
+    if (porPrecio.length === 1) return porPrecio[0];
+    if (porPrecio.length > 1) candidatos = porPrecio;
   }
-  // Si hay múltiples coincidencias parciales, preferir la más corta (más específica)
-  if (!found) {
-    const matches = productos.filter(p => {
-      const pn = p.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return pn.includes(n) || n.includes(pn);
-    });
-    if (matches.length === 1) found = matches[0];
-    else if (matches.length > 1) {
-      // Retornar el más parecido en longitud
-      found = matches.sort((a, b) => Math.abs(a.nombre.length - nombre.length) - Math.abs(b.nombre.length - nombre.length))[0];
-    }
-  }
-  return found;
+
+  // 4. Último recurso: nombre más parecido en longitud
+  return candidatos.sort((a, b) =>
+    Math.abs(a.nombre.length - nombre.length) - Math.abs(b.nombre.length - nombre.length)
+  )[0];
 }
 
 // ─── IA Chat principal ────────────────────────────────────────────────────────
@@ -468,10 +474,13 @@ Cuando el usuario vende algo (frases: "vendí", "el cliente llevó", "despachamo
 <VENTA>
 {
   "mensaje": "Listo, registré la venta. Total: S/[monto].",
-  "items": [{"nombre_buscado": "nombre", "cantidad": número}],
+  "items": [{"nombre_buscado": "nombre", "cantidad": número, "precio_unitario": número_o_null}],
   "metodo_pago": "efectivo"
 }
 </VENTA>
+- "precio_unitario": si el usuario da precio total, calcúlalo (total ÷ cantidad). Si da precio unitario, úsalo directo. Si no hay precio, pon null.
+  Ejemplo: "vendí 2 Inca Kolas a 6 soles" → precio_unitario: 3.00 | "vendí 3 leches a S/4.50 cada una" → precio_unitario: 4.50
+- El precio_unitario permite elegir la presentación correcta cuando hay varias del mismo producto (500ml vs 1.5L).
 - Si el usuario dice "al contado" → metodo_pago: "efectivo"
 - Si dice "con yape/plin" → metodo_pago: "yape"
 - Si stock es insuficiente NO registres la venta, avisa al usuario.
@@ -482,7 +491,7 @@ Cuando el usuario fía algo (frases: "fíale", "al fiado", "me debe", "se lo lle
 {
   "mensaje": "Listo, anoté el fiado de [cliente]. Debe S/[monto].",
   "cliente_nombre": "nombre del cliente",
-  "items": [{"nombre_buscado": "nombre", "cantidad": número}]
+  "items": [{"nombre_buscado": "nombre", "cantidad": número, "precio_unitario": número_o_null}]
 }
 </FIADO>
 Si no dice el nombre del cliente, PREGUNTA antes: "¿A nombre de quién anoto el fiado?"
