@@ -799,7 +799,7 @@ body {
   <div class="topbar">
     <div class="topbar-title">🏪 Don Pepe</div>
     <div class="topbar-user">
-      <strong id="nav-nombre">—</strong>
+      <strong id="nav-nombre" onclick="abrirModalPassword(null)" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Cambiar contraseña">—</strong>
       <span id="nav-rol">—</span>
       <span style="cursor:pointer;margin-left:8px" onclick="cerrarSesion()">🚪</span>
     </div>
@@ -1045,6 +1045,30 @@ body {
   <span>📲 Instalar app</span>
   <button id="btn-install">Instalar</button>
   <button class="close-banner" onclick="document.getElementById('install-banner').style.display='none'">✕</button>
+</div>
+
+<!-- ── MODAL CAMBIAR CONTRASEÑA ───────────────────────────────────── -->
+<div class="modal-overlay" id="modal-password">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-pass-title">Cambiar contraseña</span>
+      <button class="modal-close" onclick="cerrarModalPassword()">✕</button>
+    </div>
+    <div id="modal-pass-actual-wrap" class="form-row" style="margin-top:4px">
+      <label>Contraseña actual</label>
+      <input type="password" id="modal-pass-actual" placeholder="Tu contraseña actual" autocomplete="current-password">
+    </div>
+    <div class="form-row" style="margin-top:12px">
+      <label>Nueva contraseña</label>
+      <input type="password" id="modal-pass-nueva" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+    </div>
+    <div class="form-row" style="margin-top:12px">
+      <label>Confirmar nueva contraseña</label>
+      <input type="password" id="modal-pass-confirmar" placeholder="Repite la nueva contraseña" autocomplete="new-password">
+    </div>
+    <div id="modal-pass-error" style="display:none;color:var(--red);font-size:13px;margin-top:10px"></div>
+    <button class="btn-primary" style="margin-top:16px" onclick="confirmarCambioPassword()" ontouchend="event.preventDefault();confirmarCambioPassword()">Guardar contraseña</button>
+  </div>
 </div>
 
 <script>
@@ -1771,10 +1795,16 @@ async function cargarVendedores() {
           <div style="font-size:14px;font-weight:600;color:var(--text)">${v.nombre}</div>
           <div style="font-size:12px;color:var(--text2)">@${v.username}</div>
         </div>
-        <button onclick="desactivarVendedor('${v.id}')" ontouchend="event.preventDefault();desactivarVendedor('${v.id}')"
-          style="background:none;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer">
-          Eliminar
-        </button>
+        <div style="display:flex;gap:8px">
+          <button onclick="abrirModalPassword('${v.id}')" ontouchend="event.preventDefault();abrirModalPassword('${v.id}')"
+            style="background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;touch-action:manipulation">
+            🔑 Pass
+          </button>
+          <button onclick="desactivarVendedor('${v.id}')" ontouchend="event.preventDefault();desactivarVendedor('${v.id}')"
+            style="background:none;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;touch-action:manipulation">
+            Eliminar
+          </button>
+        </div>
       </div>`).join('');
   } catch(e) {
     lista.innerHTML = `<div style="color:var(--red);padding:20px">Error: ${e.message}</div>`;
@@ -1912,6 +1942,79 @@ async function cargarGananciasHoy() {
 // Service Worker
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(console.warn);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CAMBIAR CONTRASEÑA
+// ═══════════════════════════════════════════════════════════════════
+let _passTargetId = null; // null = usuario propio, uuid = vendedor
+
+function abrirModalPassword(targetId) {
+  _passTargetId = targetId || null;
+  const esPropio = !targetId;
+  document.getElementById('modal-pass-actual-wrap').style.display = esPropio ? 'block' : 'none';
+  document.getElementById('modal-pass-actual').value = '';
+  document.getElementById('modal-pass-nueva').value = '';
+  document.getElementById('modal-pass-confirmar').value = '';
+  document.getElementById('modal-pass-error').style.display = 'none';
+  document.getElementById('modal-pass-title').textContent = esPropio ? 'Cambiar mi contraseña' : 'Cambiar contraseña del vendedor';
+  document.getElementById('modal-password').classList.add('open');
+}
+
+function cerrarModalPassword() {
+  document.getElementById('modal-password').classList.remove('open');
+  _passTargetId = null;
+}
+
+async function confirmarCambioPassword() {
+  const actual = document.getElementById('modal-pass-actual').value;
+  const nueva = document.getElementById('modal-pass-nueva').value.trim();
+  const confirmar = document.getElementById('modal-pass-confirmar').value.trim();
+  const errEl = document.getElementById('modal-pass-error');
+
+  errEl.style.display = 'none';
+
+  if (nueva.length < 6) {
+    errEl.textContent = 'La nueva contraseña debe tener al menos 6 caracteres';
+    errEl.style.display = 'block'; return;
+  }
+  if (nueva !== confirmar) {
+    errEl.textContent = 'Las contraseñas no coinciden';
+    errEl.style.display = 'block'; return;
+  }
+  if (!_passTargetId && !actual) {
+    errEl.textContent = 'Escribe tu contraseña actual';
+    errEl.style.display = 'block'; return;
+  }
+
+  const btn = document.querySelector('#modal-password .btn-primary');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  try {
+    const res = await api({
+      action: 'cambiarPassword',
+      usuario_id: estadoApp.usuario.id,
+      password_actual: actual,
+      nueva_password: nueva,
+      target_id: _passTargetId,
+      solicitante_rol: estadoApp.usuario.rol,
+      tienda_id: estadoApp.usuario.tienda_id,
+    });
+    if (res.ok) {
+      cerrarModalPassword();
+      toast('✅ Contraseña actualizada');
+    } else {
+      errEl.textContent = res.error || 'Error al cambiar contraseña';
+      errEl.style.display = 'block';
+    }
+  } catch {
+    errEl.textContent = 'Error de conexión';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Guardar contraseña';
+  }
 }
 </script>
 </body>

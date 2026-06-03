@@ -297,6 +297,22 @@ Nunca uses el formato <VENTA> o <ENTRADA> para preguntas generales.`;
   return { respuesta: texto, accion: null };
 }
 
+// ─── Cambiar contraseña ───────────────────────────────────────────────────────
+async function cambiarPassword({ usuario_id, password_actual, nueva_password, target_id, solicitante_rol }) {
+  if (!nueva_password || nueva_password.length < 6) return { ok: false, error: 'La nueva contraseña debe tener al menos 6 caracteres' };
+  if (target_id && target_id !== usuario_id) {
+    if (solicitante_rol !== 'admin') return { ok: false, error: 'Sin permisos' };
+    await sb('PATCH', `usuarios?id=eq.${target_id}`, { password_hash: nueva_password });
+    return { ok: true };
+  }
+  const rows = await sb('GET', `usuarios?id=eq.${usuario_id}&activo=eq.true`);
+  if (!rows || rows.length === 0) return { ok: false, error: 'Usuario no encontrado' };
+  const user = rows[0];
+  if (user.password_hash !== password_actual) return { ok: false, error: 'La contraseña actual es incorrecta' };
+  await sb('PATCH', `usuarios?id=eq.${usuario_id}`, { password_hash: nueva_password });
+  return { ok: true };
+}
+
 // ─── Handler principal ────────────────────────────────────────────────────────
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
@@ -331,6 +347,10 @@ exports.handler = async (event) => {
 
       case 'registrarEntrada':
         result = await registrarEntrada(body);
+        break;
+
+      case 'cambiarPassword':
+        result = await cambiarPassword(body);
         break;
 
       case 'chat': {

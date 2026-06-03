@@ -84,6 +84,32 @@ async function desactivarVendedor(id) {
   await sb('PATCH', `usuarios?id=eq.${id}`, { activo: false });
   return { ok: true };
 }
+async function cambiarPassword({ usuario_id, password_actual, nueva_password, target_id, solicitante_rol }) {
+  if (!nueva_password || nueva_password.length < 6) return { ok: false, error: 'La nueva contraseña debe tener al menos 6 caracteres' };
+
+  // Admin cambiando contraseña de un vendedor (no necesita contraseña actual)
+  if (target_id && target_id !== usuario_id) {
+    if (solicitante_rol !== 'admin') return { ok: false, error: 'Sin permisos' };
+    const hashed = await bcrypt.hash(nueva_password, 10);
+    await sb('PATCH', `usuarios?id=eq.${target_id}`, { password_hash: hashed });
+    return { ok: true };
+  }
+
+  // Usuario cambiando su propia contraseña (necesita contraseña actual)
+  const rows = await sb('GET', `usuarios?id=eq.${usuario_id}&activo=eq.true`);
+  if (!rows || rows.length === 0) return { ok: false, error: 'Usuario no encontrado' };
+  const user = rows[0];
+  let actual_ok = false;
+  if (user.password_hash && user.password_hash.startsWith('$2')) {
+    actual_ok = await bcrypt.compare(password_actual, user.password_hash);
+  } else {
+    actual_ok = user.password_hash === password_actual;
+  }
+  if (!actual_ok) return { ok: false, error: 'La contraseña actual es incorrecta' };
+  const hashed = await bcrypt.hash(nueva_password, 10);
+  await sb('PATCH', `usuarios?id=eq.${usuario_id}`, { password_hash: hashed });
+  return { ok: true };
+}
 
 // ─── Productos ────────────────────────────────────────────────────────────────
 async function getProductos(tienda_id) {
@@ -616,6 +642,7 @@ module.exports = async (req, res) => {
       case 'getVendedores':  result = await getVendedores(body.tienda_id); break;
       case 'crearVendedor':  result = await crearVendedor(body); break;
       case 'desactivarVendedor': result = await desactivarVendedor(body.id); break;
+      case 'cambiarPassword':    result = await cambiarPassword(body); break;
       case 'ajustarStock':   result = await ajustarStock(body); break;
       case 'editarProducto': result = await editarProducto(body); break;
       case 'getFiados':      result = await getFiados(body.tienda_id); break;
