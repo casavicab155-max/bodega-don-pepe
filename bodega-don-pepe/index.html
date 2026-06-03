@@ -1068,14 +1068,21 @@ let estadoApp = {
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
-async function api(body) {
-  const res = await fetch(API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`Error ${res.status}`);
-  return res.json();
+async function api(body, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Error ${res.status}`);
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function toast(msg, tipo = '') {
@@ -1184,26 +1191,45 @@ async function login() {
   if (!username || !password) return;
 
   const btn = document.getElementById('btn-login');
+  const errEl = document.getElementById('login-error');
   btn.disabled = true;
-  btn.textContent = 'Ingresando...';
-  document.getElementById('login-error').style.display = 'none';
+  errEl.style.display = 'none';
 
-  try {
-    const res = await api({ action: 'auth', username, password });
-    if (res.ok) {
-      estadoApp.usuario = res.user;
-      iniciarApp();
+  const MAX_INTENTOS = 3;
+  for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
+    if (intento === 1) {
+      btn.textContent = 'Ingresando...';
     } else {
-      document.getElementById('login-error').style.display = 'block';
-      document.getElementById('login-error').textContent = '❌ ' + (res.error || 'Credenciales incorrectas');
+      btn.textContent = `Reintentando (${intento - 1}/${MAX_INTENTOS - 1})...`;
+      errEl.style.display = 'block';
+      errEl.style.color = '#f97316';
+      errEl.textContent = `⏳ Despertando servidor... reintentando (${intento - 1}/${MAX_INTENTOS - 1})`;
+      await new Promise(r => setTimeout(r, 3000));
     }
-  } catch {
-    document.getElementById('login-error').style.display = 'block';
-    document.getElementById('login-error').textContent = '❌ Error de conexión';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Ingresar';
+
+    try {
+      const res = await api({ action: 'auth', username, password });
+      errEl.style.color = '';
+      if (res.ok) {
+        estadoApp.usuario = res.user;
+        iniciarApp();
+        return;
+      } else {
+        errEl.style.display = 'block';
+        errEl.textContent = '❌ ' + (res.error || 'Credenciales incorrectas');
+        break; // credenciales incorrectas, no reintentar
+      }
+    } catch {
+      if (intento === MAX_INTENTOS) {
+        errEl.style.display = 'block';
+        errEl.style.color = '';
+        errEl.textContent = '❌ Sin conexión. Verifica tu internet e intenta de nuevo.';
+      }
+    }
   }
+
+  btn.disabled = false;
+  btn.textContent = 'Ingresar';
 }
 
 function cerrarSesion() {
