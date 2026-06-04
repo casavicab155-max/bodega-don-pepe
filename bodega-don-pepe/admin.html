@@ -176,6 +176,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     <div class="topbar-right">
       <span class="last-update" id="last-update"></span>
       <button class="btn-refresh" onclick="cargarDatos()">↻ Actualizar</button>
+      <button class="btn-refresh" onclick="cerrarSesionAdmin()" style="color:#ef4444;border-color:#ef4444">⏻ Salir</button>
     </div>
   </div>
 
@@ -191,6 +192,14 @@ let secretGuardado = '';
 document.getElementById('inp-secret').addEventListener('keydown', e => {
   if (e.key === 'Enter') entrar();
 });
+
+function cerrarSesionAdmin() {
+  secretGuardado = '';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('inp-secret').value = '';
+  document.getElementById('content').innerHTML = '';
+}
 
 async function entrar() {
   const secret = document.getElementById('inp-secret').value.trim();
