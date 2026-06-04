@@ -978,6 +978,7 @@ module.exports = async (req, res) => {
       case 'desactivarVendedor': result = await desactivarVendedor(body.id); break;
       case 'cambiarPassword':      result = await cambiarPassword(body); break;
       case 'cambiarNombreTienda':  result = await cambiarNombreTienda(body); break;
+      case 'ping':                 result = { ok: true, ts: Date.now() }; break;
       case 'analizarFactura':      result = await analizarFactura(body); break;
       case 'buscarCatalogo':       result = await buscarCatalogo(body); break;
       case 'guardarEnCatalogo':    result = await guardarEnCatalogo(body); break;

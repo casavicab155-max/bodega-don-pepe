@@ -205,12 +205,34 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 <script>
 const API = '/api/admin';
 let secretGuardado = '';
+let keepaliveInterval = null;
 
 document.getElementById('inp-secret').addEventListener('keydown', e => {
   if (e.key === 'Enter') entrar();
 });
 
+// Keepalive: ping a /api/chat cada 4 minutos para evitar cold start
+function iniciarKeepalive() {
+  if (keepaliveInterval) return;
+  keepaliveInterval = setInterval(async () => {
+    try {
+      await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'ping' }),
+      });
+      document.getElementById('last-update').textContent =
+        'Servidor activo · ' + new Date().toLocaleTimeString('es-PE');
+    } catch {}
+  }, 4 * 60 * 1000); // cada 4 minutos
+}
+
+function detenerKeepalive() {
+  if (keepaliveInterval) { clearInterval(keepaliveInterval); keepaliveInterval = null; }
+}
+
 function cerrarSesionAdmin() {
+  detenerKeepalive();
   secretGuardado = '';
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
@@ -240,6 +262,7 @@ async function entrar() {
     document.getElementById('app').style.display = 'block';
     renderDashboard(data);
     document.getElementById('last-update').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-PE');
+    iniciarKeepalive();
   } catch {
     errEl.style.display = 'block';
     errEl.textContent = 'Error de conexión';
