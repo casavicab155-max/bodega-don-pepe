@@ -2261,7 +2261,7 @@ function cerrarEscaner() {
   }
 }
 
-function onCodigoEscaneado(codigo) {
+async function onCodigoEscaneado(codigo) {
   cerrarEscaner();
 
   if (_scanContexto === 'modal-producto') {
