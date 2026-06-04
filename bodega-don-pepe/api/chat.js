@@ -355,6 +355,187 @@ async function getReporteGanancias({ tienda_id, fechaInicio, fechaFin }) {
   };
 }
 
+// ─── Analizar factura con Vision ─────────────────────────────────────────────
+async function analizarFactura({ imagen_base64, media_type, tienda_id, usuario }) {
+  if (!imagen_base64) return { ok: false, error: 'No se recibió imagen' };
+  if (!ANTHROPIC_API_KEY) return { ok: false, error: 'API key no configurada' };
+
+  // 1. Claude Vision extrae los productos de la factura
+  const visionRes = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: media_type || 'image/jpeg', data: imagen_base64 },
+          },
+          {
+            type: 'text',
+            text: `Eres un asistente que extrae productos de facturas o boletas de proveedores peruanos.
+Analiza esta imagen y extrae TODOS los productos que aparecen.
+Responde SOLO con un JSON válido con este formato exacto, sin texto adicional:
+{
+  "proveedor": "nombre del proveedor o null",
+  "fecha": "fecha en formato YYYY-MM-DD o null",
+  "productos": [
+    {
+      "nombre": "nombre del producto",
+      "cantidad": número,
+      "precio_costo_unitario": número,
+      "unidad": "unidad/caja/paquete/botella/kg",
+      "categoria": "bebidas/abarrotes/snacks/lacteos/panaderia/limpieza/general"
+    }
+  ]
+}
+Si no puedes leer algún campo con certeza, ponlo en null.
+Si la imagen no es una factura o boleta, responde: {"error": "No es una factura"}`,
+          },
+        ],
+      }],
+    }),
+  });
+
+  if (!visionRes.ok) throw new Error(`Vision API error: ${visionRes.status}`);
+  const visionData = await visionRes.json();
+  const textoRespuesta = visionData.content[0].text.trim();
+
+  let facturaData;
+  try {
+    const jsonMatch = textoRespuesta.match(/\{[\s\S]*\}/);
+    facturaData = JSON.parse(jsonMatch ? jsonMatch[0] : textoRespuesta);
+  } catch {
+    return { ok: false, error: 'No pude leer la factura. ¿Puedes tomar la foto más cerca y con mejor luz?' };
+  }
+
+  if (facturaData.error) return { ok: false, error: facturaData.error };
+  if (!facturaData.productos || facturaData.productos.length === 0) {
+    return { ok: false, error: 'No encontré productos en la imagen. Intenta con una foto más clara.' };
+  }
+
+  // 2. Obtener inventario actual de la tienda
+  const productosExistentes = await getProductos(tienda_id);
+  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
+  const resultados = { nuevos: [], actualizados: [], precio_cambio: [], sin_precio_venta: [] };
+
+  for (const item of facturaData.productos) {
+    if (!item.nombre || !item.cantidad) continue;
+    const cantidad = parseFloat(item.cantidad) || 0;
+    const precio_costo = parseFloat(item.precio_costo_unitario) || 0;
+    if (cantidad <= 0) continue;
+
+    // Buscar si el producto ya existe
+    const existente = productosExistentes.find(p => norm(p.nombre) === norm(item.nombre)) ||
+      productosExistentes.find(p => norm(p.nombre).includes(norm(item.nombre)) || norm(item.nombre).includes(norm(p.nombre)));
+
+    if (existente) {
+      // Sumar stock
+      const nuevo_stock = (parseFloat(existente.stock) || 0) + cantidad;
+      const data = { stock: nuevo_stock };
+
+      // Detectar cambio de precio de costo
+      const costo_anterior = parseFloat(existente.precio_costo) || 0;
+      if (precio_costo > 0 && Math.abs(precio_costo - costo_anterior) > 0.01) {
+        data.precio_costo = precio_costo;
+        resultados.precio_cambio.push({
+          nombre: existente.nombre,
+          costo_anterior: costo_anterior.toFixed(2),
+          costo_nuevo: precio_costo.toFixed(2),
+        });
+      } else if (precio_costo > 0) {
+        data.precio_costo = precio_costo;
+      }
+
+      await sb('PATCH', `productos?id=eq.${existente.id}`, data);
+
+      // Registrar entrada
+      await sb('POST', 'entradas_mercaderia', {
+        usuario_id: usuario?.id || null,
+        tienda_id,
+        producto_id: existente.id,
+        cantidad,
+        precio_costo: precio_costo || existente.precio_costo,
+        proveedor: facturaData.proveedor || null,
+        origen: 'factura',
+      }).catch(() => {});
+
+      resultados.actualizados.push({ nombre: existente.nombre, cantidad, stock_nuevo: nuevo_stock });
+    } else {
+      // Producto nuevo — crear sin precio de venta por ahora
+      if (precio_costo > 0) {
+        const nuevoProducto = {
+          nombre: item.nombre,
+          categoria: item.categoria || 'general',
+          unidad: item.unidad || 'unidad',
+          precio_costo,
+          precio_venta: 0, // Se pedirá al usuario
+          stock: cantidad,
+          stock_minimo: 5,
+          activo: true,
+          tienda_id,
+        };
+        const [creado] = await sb('POST', 'productos', nuevoProducto);
+        await sb('POST', 'entradas_mercaderia', {
+          usuario_id: usuario?.id || null,
+          tienda_id,
+          producto_id: creado.id,
+          cantidad,
+          precio_costo,
+          proveedor: facturaData.proveedor || null,
+          origen: 'factura',
+        }).catch(() => {});
+        resultados.nuevos.push({ nombre: item.nombre, cantidad, precio_costo });
+        resultados.sin_precio_venta.push(item.nombre);
+      } else {
+        // Sin precio de costo tampoco → pedir ambos
+        resultados.nuevos.push({ nombre: item.nombre, cantidad, precio_costo: null });
+        resultados.sin_precio_venta.push(item.nombre);
+      }
+    }
+  }
+
+  // 3. Construir mensaje de respuesta
+  let respuesta = '';
+  if (facturaData.proveedor) respuesta += `📄 Factura de **${facturaData.proveedor}**\n\n`;
+
+  if (resultados.actualizados.length > 0) {
+    respuesta += `✅ **Actualicé el stock de ${resultados.actualizados.length} producto(s):**\n`;
+    respuesta += resultados.actualizados.map(p => `• ${p.nombre}: +${p.cantidad} unid. (stock total: ${p.stock_nuevo})`).join('\n');
+    respuesta += '\n\n';
+  }
+
+  if (resultados.precio_cambio.length > 0) {
+    respuesta += `⚠️ **Cambio de precio de costo detectado:**\n`;
+    respuesta += resultados.precio_cambio.map(p => `• ${p.nombre}: S/${p.costo_anterior} → S/${p.costo_nuevo}`).join('\n');
+    respuesta += '\n¿Quieres ajustar el precio de venta de alguno?\n\n';
+  }
+
+  if (resultados.nuevos.length > 0) {
+    respuesta += `🆕 **Productos nuevos agregados (${resultados.nuevos.length}):**\n`;
+    respuesta += resultados.nuevos.map(p => `• ${p.nombre}: ${p.cantidad} unid.${p.precio_costo ? ` (costo: S/${p.precio_costo})` : ''}`).join('\n');
+    respuesta += '\n\n';
+  }
+
+  if (resultados.sin_precio_venta.length > 0) {
+    respuesta += `💰 **Falta el precio de venta para:**\n`;
+    respuesta += resultados.sin_precio_venta.map(n => `• ${n}`).join('\n');
+    respuesta += '\n\nDime el precio de cada uno para que tus clientes puedan comprarlos.';
+  }
+
+  if (!respuesta) respuesta = 'Procesé la factura pero no encontré productos claros. Intenta con una foto más nítida.';
+
+  return { ok: true, respuesta, resultados };
+}
+
 // ─── Buscar producto por nombre ───────────────────────────────────────────────
 function buscarProductoPorNombre(nombre, productos, precio_unitario = null) {
   const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -754,6 +935,7 @@ module.exports = async (req, res) => {
       case 'desactivarVendedor': result = await desactivarVendedor(body.id); break;
       case 'cambiarPassword':      result = await cambiarPassword(body); break;
       case 'cambiarNombreTienda':  result = await cambiarNombreTienda(body); break;
+      case 'analizarFactura':      result = await analizarFactura(body); break;
       case 'buscarCatalogo':       result = await buscarCatalogo(body); break;
       case 'guardarEnCatalogo':    result = await guardarEnCatalogo(body); break;
       case 'ajustarStock':   result = await ajustarStock(body); break;
