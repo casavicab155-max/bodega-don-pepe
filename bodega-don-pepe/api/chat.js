@@ -4,6 +4,7 @@
 // =============================================
 
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://eoyvzkargirskdttuxmn.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY ||
@@ -356,11 +357,14 @@ async function getReporteGanancias({ tienda_id, fechaInicio, fechaFin }) {
 }
 
 // ─── Analizar factura con Vision ─────────────────────────────────────────────
-async function analizarFactura({ imagen_base64, media_type, tienda_id, usuario }) {
+async function analizarFactura({ imagen_base64, media_type, tienda_id, usuario, confirmar_duplicado = false }) {
   if (!imagen_base64) return { ok: false, error: 'No se recibió imagen' };
   if (!ANTHROPIC_API_KEY) return { ok: false, error: 'API key no configurada' };
 
-  // 1. Claude Vision extrae los productos de la factura
+  // 1. Hash de la imagen para detectar foto duplicada exacta
+  const hash_imagen = crypto.createHash('sha256').update(imagen_base64).digest('hex').slice(0, 32);
+
+  // 2. Claude Vision extrae los productos de la factura
   const visionRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -380,24 +384,24 @@ async function analizarFactura({ imagen_base64, media_type, tienda_id, usuario }
           },
           {
             type: 'text',
-            text: `Eres un asistente que extrae productos de facturas o boletas de proveedores peruanos.
-Analiza esta imagen y extrae TODOS los productos que aparecen.
-Responde SOLO con un JSON válido con este formato exacto, sin texto adicional:
+            text: `Eres un asistente que extrae datos de facturas o boletas de proveedores peruanos.
+Analiza esta imagen y extrae TODOS los productos. Responde SOLO con JSON valido, sin texto adicional:
 {
+  "numero_factura": "numero de serie como F001-00012345 o null si no se ve",
   "proveedor": "nombre del proveedor o null",
   "fecha": "fecha en formato YYYY-MM-DD o null",
   "productos": [
     {
       "nombre": "nombre del producto",
-      "cantidad": número,
-      "precio_costo_unitario": número,
+      "cantidad": numero,
+      "precio_costo_unitario": numero_o_null,
       "unidad": "unidad/caja/paquete/botella/kg",
       "categoria": "bebidas/abarrotes/snacks/lacteos/panaderia/limpieza/general"
     }
   ]
 }
-Si no puedes leer algún campo con certeza, ponlo en null.
-Si la imagen no es una factura o boleta, responde: {"error": "No es una factura"}`,
+Si no puedes leer algun campo con certeza ponlo en null.
+Si la imagen no es una factura o boleta responde: {"error": "No es una factura"}`,
           },
         ],
       }],
@@ -421,7 +425,31 @@ Si la imagen no es una factura o boleta, responde: {"error": "No es una factura"
     return { ok: false, error: 'No encontré productos en la imagen. Intenta con una foto más clara.' };
   }
 
-  // 2. Obtener inventario actual de la tienda
+  // 3. Verificar duplicado (salvo que el usuario confirmó que quiere registrarla igual)
+  if (!confirmar_duplicado) {
+    const checksPromises = [];
+    if (facturaData.numero_factura)
+      checksPromises.push(sb('GET', `facturas_registradas?tienda_id=eq.${tienda_id}&numero_factura=eq.${encodeURIComponent(facturaData.numero_factura)}`));
+    checksPromises.push(sb('GET', `facturas_registradas?tienda_id=eq.${tienda_id}&hash_imagen=eq.${hash_imagen}`));
+    const resultChecks = await Promise.all(checksPromises);
+    const dupNumero = (facturaData.numero_factura && resultChecks[0]?.length > 0) ? resultChecks[0][0] : null;
+    const dupHash = resultChecks[resultChecks.length - 1]?.length > 0 ? resultChecks[resultChecks.length - 1][0] : null;
+    if (dupNumero || dupHash) {
+      const reg = dupNumero || dupHash;
+      const fechaReg = new Date(reg.created_at).toLocaleDateString('es-PE', { day: 'numeric', month: 'long' });
+      const razon = dupNumero ? `la factura ${facturaData.numero_factura}` : 'esta misma foto';
+      return {
+        ok: false,
+        es_duplicado: true,
+        hash_imagen,
+        numero_factura: facturaData.numero_factura,
+        proveedor: facturaData.proveedor,
+        mensaje_duplicado: `Ya registre ${razon} el ${fechaReg}${reg.proveedor ? ' de ' + reg.proveedor : ''}. Si la registras de nuevo el stock se sumara otra vez. Quieres registrarla igual?`,
+      };
+    }
+  }
+
+  // 4. Obtener inventario actual de la tienda
   const productosExistentes = await getProductos(tienda_id);
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
@@ -503,9 +531,24 @@ Si la imagen no es una factura o boleta, responde: {"error": "No es una factura"
     }
   }
 
-  // 3. Construir mensaje de respuesta
+  // 5. Guardar huella de la factura para detección futura
+  await sb('POST', 'facturas_registradas', {
+    tienda_id,
+    numero_factura: facturaData.numero_factura || null,
+    proveedor: facturaData.proveedor || null,
+    fecha_factura: facturaData.fecha || null,
+    hash_imagen,
+  }).catch(() => {});
+
+  // 6. Construir mensaje de respuesta
   let respuesta = '';
-  if (facturaData.proveedor) respuesta += `📄 Factura de **${facturaData.proveedor}**\n\n`;
+  if (facturaData.numero_factura || facturaData.proveedor) {
+    respuesta += '📄 **';
+    if (facturaData.numero_factura) respuesta += facturaData.numero_factura;
+    if (facturaData.numero_factura && facturaData.proveedor) respuesta += ' — ';
+    if (facturaData.proveedor) respuesta += facturaData.proveedor;
+    respuesta += '**\n\n';
+  }
 
   if (resultados.actualizados.length > 0) {
     respuesta += `✅ **Actualicé el stock de ${resultados.actualizados.length} producto(s):**\n`;

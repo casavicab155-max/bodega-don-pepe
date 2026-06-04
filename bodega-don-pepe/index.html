@@ -1771,6 +1771,24 @@ async function enviarFactura(input) {
         await cargarProductos();
         actualizarSelectVentas();
         toast('✅ Factura procesada', 'success');
+      } else if (res.es_duplicado) {
+        // Mostrar aviso de duplicado con botones Sí/No
+        const cont = document.getElementById('chat-msgs');
+        const div = document.createElement('div');
+        div.className = 'bubble ia';
+        div.innerHTML = `⚠️ ${res.mensaje_duplicado.replace(/\n/g, '<br>')}
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button onclick="confirmarFacturaDuplicada(this,'${res.hash_imagen}','${res.numero_factura || ''}','${base64}')"
+              style="flex:1;padding:8px;background:var(--red);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;touch-action:manipulation">
+              Sí, registrarla igual
+            </button>
+            <button onclick="this.closest('.bubble').remove()"
+              style="flex:1;padding:8px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;touch-action:manipulation">
+              No, cancelar
+            </button>
+          </div>`;
+        cont.appendChild(div);
+        cont.scrollTop = cont.scrollHeight;
       } else {
         agregarBurbuja('ia', '❌ ' + (res.error || 'No pude procesar la factura'));
       }
@@ -1780,6 +1798,33 @@ async function enviarFactura(input) {
     }
   };
   reader.readAsDataURL(file);
+}
+
+async function confirmarFacturaDuplicada(btn, hash_imagen, numero_factura, base64) {
+  btn.closest('.bubble').remove();
+  const typing = agregarBurbuja('ia', '', true);
+  try {
+    const res = await api({
+      action: 'analizarFactura',
+      imagen_base64: base64,
+      media_type: 'image/jpeg',
+      tienda_id: estadoApp.usuario?.tienda_id,
+      usuario: estadoApp.usuario,
+      confirmar_duplicado: true,
+    }, 45000);
+    typing.remove();
+    if (res.ok) {
+      agregarBurbuja('ia', res.respuesta, false, true);
+      await cargarProductos();
+      actualizarSelectVentas();
+      toast('✅ Factura registrada', 'success');
+    } else {
+      agregarBurbuja('ia', '❌ ' + (res.error || 'Error al procesar'));
+    }
+  } catch {
+    typing.remove();
+    agregarBurbuja('ia', '❌ Error de conexión. Intenta de nuevo.');
+  }
 }
 
 async function enviarChat() {
