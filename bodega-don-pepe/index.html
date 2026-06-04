@@ -1231,7 +1231,7 @@ let estadoApp = {
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
-async function api(body, timeoutMs = 12000) {
+async function api(body, timeoutMs = 25000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -1358,7 +1358,7 @@ async function login() {
   btn.disabled = true;
   errEl.style.display = 'none';
 
-  const MAX_INTENTOS = 3;
+  const MAX_INTENTOS = 4;
   for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
     if (intento === 1) {
       btn.textContent = 'Ingresando...';
