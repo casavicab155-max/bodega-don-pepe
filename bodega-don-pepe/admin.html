@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dona · Superadmin</title>
+<style>
+:root {
+  --bg:     #0f172a;
+  --bg2:    #1e293b;
+  --bg3:    #334155;
+  --border: #475569;
+  --text:   #f1f5f9;
+  --text2:  #94a3b8;
+  --text3:  #64748b;
+  --orange: #f97316;
+  --green:  #22c55e;
+  --red:    #ef4444;
+  --blue:   #3b82f6;
+  --yellow: #eab308;
+  --radius: 12px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* LOGIN */
+#login-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+}
+.login-box {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 20px;
+  padding: 40px; width: 100%; max-width: 360px; text-align: center;
+}
+.login-logo { font-size: 48px; margin-bottom: 8px; }
+.login-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.login-sub { color: var(--text2); font-size: 13px; margin-bottom: 28px; }
+.login-box input {
+  width: 100%; padding: 12px 16px; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text); font-size: 15px; margin-bottom: 12px;
+}
+.login-box input:focus { outline: none; border-color: var(--orange); }
+.btn-login {
+  width: 100%; padding: 13px; background: var(--orange); color: #fff; border: none;
+  border-radius: var(--radius); font-size: 15px; font-weight: 700; cursor: pointer;
+}
+.btn-login:hover { opacity: 0.9; }
+#login-error { color: var(--red); font-size: 13px; margin-top: 10px; display: none; }
+
+/* APP */
+#app { display: none; }
+.topbar {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 10;
+}
+.topbar-brand { display: flex; align-items: center; gap: 10px; }
+.topbar-logo { font-size: 24px; }
+.topbar-title { font-size: 16px; font-weight: 700; }
+.topbar-badge { background: var(--orange); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.btn-refresh {
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer;
+}
+.btn-refresh:hover { background: var(--border); }
+.last-update { color: var(--text3); font-size: 12px; }
+
+.content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+/* SECCIÓN */
+.section-title {
+  font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase;
+  letter-spacing: 1px; margin-bottom: 12px; margin-top: 28px;
+}
+.section-title:first-child { margin-top: 0; }
+
+/* KPI GRID */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.kpi-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.kpi-label { font-size: 11px; color: var(--text2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.kpi-value { font-size: 28px; font-weight: 800; line-height: 1; }
+.kpi-sub { font-size: 12px; color: var(--text3); margin-top: 4px; }
+.kpi-orange { border-left: 3px solid var(--orange); }
+.kpi-green  { border-left: 3px solid var(--green); }
+.kpi-blue   { border-left: 3px solid var(--blue); }
+.kpi-yellow { border-left: 3px solid var(--yellow); }
+.kpi-red    { border-left: 3px solid var(--red); }
+
+/* TABLA DE TIENDAS */
+.table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead { background: var(--bg3); }
+th { padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+td { padding: 12px 14px; border-top: 1px solid var(--border); vertical-align: middle; }
+tr:hover td { background: rgba(255,255,255,0.02); }
+.tienda-nombre { font-weight: 600; color: var(--text); }
+.tienda-admin  { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+}
+.badge-basico  { background: rgba(100,116,139,0.2); color: var(--text2); }
+.badge-pro     { background: rgba(59,130,246,0.2);  color: var(--blue); }
+.badge-negocio { background: rgba(249,115,22,0.2);  color: var(--orange); }
+.badge-activa  { background: rgba(34,197,94,0.15);  color: var(--green); }
+.badge-inactiva{ background: rgba(239,68,68,0.15);  color: var(--red); }
+
+.stat-num { font-weight: 700; color: var(--text); }
+.stat-monto { font-weight: 700; color: var(--green); }
+.stat-ia { color: var(--blue); font-weight: 600; }
+.stat-fiado { color: var(--yellow); }
+
+/* GRID INFERIOR */
+.bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .bottom-grid { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px;
+}
+.card-title { font-size: 13px; font-weight: 700; margin-bottom: 16px; color: var(--text); }
+
+/* ACTIVIDAD */
+.actividad-item {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+}
+.actividad-item:last-child { border-bottom: none; }
+.actividad-left { flex: 1; }
+.actividad-tienda { font-weight: 600; color: var(--text); }
+.actividad-tipo { color: var(--text3); font-size: 11px; margin-top: 1px; }
+.actividad-right { text-align: right; }
+.actividad-monto { font-weight: 700; color: var(--green); }
+.actividad-hora { color: var(--text3); font-size: 11px; margin-top: 1px; }
+
+/* FEATURES */
+.feature-bar { margin-bottom: 14px; }
+.feature-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+.feature-track { background: var(--bg3); border-radius: 4px; height: 8px; overflow: hidden; }
+.feature-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+
+/* SPINNER */
+.spinner-wrap { display: flex; align-items: center; justify-content: center; min-height: 200px; }
+.spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--orange); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty { color: var(--text3); font-size: 13px; text-align: center; padding: 30px; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">🏪</div>
+    <div class="login-title">Dona Superadmin</div>
+    <div class="login-sub">Panel de control interno</div>
+    <input type="password" id="inp-secret" placeholder="Contraseña de acceso" autocomplete="current-password">
+    <button class="btn-login" onclick="entrar()">Entrar</button>
+    <div id="login-error">Contraseña incorrecta</div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-brand">
+      <span class="topbar-logo">🏪</span>
+      <span class="topbar-title">Dona Superadmin</span>
+      <span class="topbar-badge">INTERNO</span>
+    </div>
+    <div class="topbar-right">
+      <span class="last-update" id="last-update"></span>
+      <button class="btn-refresh" onclick="cargarDatos()">↻ Actualizar</button>
+    </div>
+  </div>
+
+  <div class="content" id="content">
+    <div class="spinner-wrap"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<script>
+const API = '/api/admin';
+let secretGuardado = '';
+
+document.getElementById('inp-secret').addEventListener('keydown', e => {
+  if (e.key === 'Enter') entrar();
+});
+
+async function entrar() {
+  const secret = document.getElementById('inp-secret').value.trim();
+  if (!secret) return;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret, action: 'dashboard' }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      errEl.style.display = 'block';
+      return;
+    }
+    secretGuardado = secret;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    renderDashboard(data);
+    document.getElementById('last-update').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-PE');
+  } catch {
+    errEl.style.display = 'block';
+    errEl.textContent = 'Error de conexión';
+  }
+}
+
+async function cargarDatos() {
+  document.getElementById('content').innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: secretGuardado, action: 'dashboard' }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      renderDashboard(data);
+      document.getElementById('last-update').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-PE');
+    }
+  } catch {}
+}
+
+function fmt(n) { return 'S/' + parseFloat(n).toFixed(2); }
+function fmtNum(n) { return Number(n).toLocaleString('es-PE'); }
+
+function tiempoRelativo(fecha) {
+  if (!fecha) return '—';
+  const diff = Date.now() - new Date(fecha);
+  const min = Math.floor(diff / 60000);
+  if (min < 60) return `hace ${min}m`;
+  const hrs = Math.floor(min / 60);
+  if (hrs < 24) return `hace ${hrs}h`;
+  const dias = Math.floor(hrs / 24);
+  return `hace ${dias}d`;
+}
+
+function renderDashboard(data) {
+  const { global: g, tiendas, actividadReciente, features } = data;
+  const totalFeatures = (features.ventasIA + features.ventasManuales + features.fiados) || 1;
+
+  const html = `
+    <!-- KPIs Globales -->
+    <div class="section-title">Resumen global — ${new Date().toLocaleDateString('es-PE', {weekday:'long', day:'numeric', month:'long'})}</div>
+    <div class="kpi-grid">
+      <div class="kpi-card kpi-orange">
+        <div class="kpi-label">Tiendas activas</div>
+        <div class="kpi-value">${g.tiendas}</div>
+        <div class="kpi-sub">${g.usuarios} usuarios · ${g.vendedores} vendedores</div>
+      </div>
+      <div class="kpi-card kpi-green">
+        <div class="kpi-label">Ventas hoy</div>
+        <div class="kpi-value">${fmt(g.totalVentasHoy)}</div>
+        <div class="kpi-sub">${g.cantVentasHoy} transacciones</div>
+      </div>
+      <div class="kpi-card kpi-green">
+        <div class="kpi-label">Ventas esta semana</div>
+        <div class="kpi-value">${fmt(g.totalVentasSemana)}</div>
+        <div class="kpi-sub">${g.cantVentasSemana} transacciones</div>
+      </div>
+      <div class="kpi-card kpi-green">
+        <div class="kpi-label">Ventas este mes</div>
+        <div class="kpi-value">${fmt(g.totalVentasMes)}</div>
+        <div class="kpi-sub">${g.cantVentasMes} transacciones</div>
+      </div>
+      <div class="kpi-card kpi-blue">
+        <div class="kpi-label">Consultas IA hoy</div>
+        <div class="kpi-value">${g.consultasIAHoy}</div>
+        <div class="kpi-sub">${g.consultasIASemana} semana · ${g.consultasIAMes} mes</div>
+      </div>
+      <div class="kpi-card kpi-yellow">
+        <div class="kpi-label">Fiados pendientes</div>
+        <div class="kpi-value">${fmt(g.totalFiados)}</div>
+        <div class="kpi-sub">en todas las bodegas</div>
+      </div>
+      <div class="kpi-card kpi-orange">
+        <div class="kpi-label">Productos totales</div>
+        <div class="kpi-value">${fmtNum(g.productos)}</div>
+        <div class="kpi-sub">${fmtNum(g.catalogoGlobal)} en catálogo global</div>
+      </div>
+    </div>
+
+    <!-- Tabla de tiendas -->
+    <div class="section-title">Tiendas registradas</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Tienda</th>
+            <th>Plan</th>
+            <th>Estado</th>
+            <th>Ventas hoy</th>
+            <th>Ventas mes</th>
+            <th>Monto mes</th>
+            <th>IA mes</th>
+            <th>Productos</th>
+            <th>Vendedores</th>
+            <th>Fiado pendiente</th>
+            <th>Última actividad</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tiendas.length === 0 ? `<tr><td colspan="11" class="empty">No hay tiendas registradas</td></tr>` :
+            tiendas.map(t => `
+              <tr>
+                <td>
+                  <div class="tienda-nombre">${t.nombre}</div>
+                  <div class="tienda-admin">@${t.propietario}</div>
+                </td>
+                <td><span class="badge badge-${t.plan}">${t.plan}</span></td>
+                <td>
+                  <span class="badge ${t.activa ? 'badge-activa' : 'badge-inactiva'}">
+                    ${t.activa ? 'Activa' : t.diasSinActividad !== null ? `${t.diasSinActividad}d sin uso` : 'Sin ventas'}
+                  </span>
+                </td>
+                <td><span class="stat-num">${t.ventasHoy}</span> <span style="color:var(--text3);font-size:11px">(${fmt(t.montoHoy)})</span></td>
+                <td><span class="stat-num">${t.ventasMes}</span></td>
+                <td><span class="stat-monto">${fmt(t.montoMes)}</span></td>
+                <td><span class="stat-ia">🤖 ${t.iaUsoMes}</span></td>
+                <td>${t.productos}</td>
+                <td>${t.vendedores}</td>
+                <td><span class="stat-fiado">${parseFloat(t.fiadoDeuda) > 0 ? fmt(t.fiadoDeuda) : '—'}</span></td>
+                <td style="color:var(--text3);font-size:12px">${tiempoRelativo(t.ultimaActividad)}</td>
+              </tr>
+            `).join('')
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Grid inferior -->
+    <div class="bottom-grid" style="margin-top:16px">
+
+      <!-- Actividad reciente -->
+      <div class="card">
+        <div class="card-title">🕐 Actividad reciente</div>
+        ${actividadReciente.length === 0
+          ? '<div class="empty">Sin actividad reciente</div>'
+          : actividadReciente.slice(0, 15).map(a => `
+            <div class="actividad-item">
+              <div class="actividad-left">
+                <div class="actividad-tienda">${a.tienda}</div>
+                <div class="actividad-tipo">
+                  ${a.es_fiado ? '📒 Fiado' : a.origen === 'ia' ? '🤖 Venta IA' : '🛒 Venta manual'}
+                  ${a.cliente ? ' · ' + a.cliente : ''}
+                  · ${a.metodo_pago}
+                </div>
+              </div>
+              <div class="actividad-right">
+                <div class="actividad-monto">${fmt(a.total)}</div>
+                <div class="actividad-hora">${tiempoRelativo(a.fecha)}</div>
+              </div>
+            </div>
+          `).join('')
+        }
+      </div>
+
+      <!-- Uso de features -->
+      <div class="card">
+        <div class="card-title">📊 Uso de features este mes</div>
+
+        <div class="feature-bar">
+          <div class="feature-label">
+            <span>🤖 Ventas por IA</span>
+            <span style="font-weight:700">${features.ventasIA} (${Math.round(features.ventasIA/totalFeatures*100)}%)</span>
+          </div>
+          <div class="feature-track">
+            <div class="feature-fill" style="width:${features.ventasIA/totalFeatures*100}%;background:var(--blue)"></div>
+          </div>
+        </div>
+
+        <div class="feature-bar">
+          <div class="feature-label">
+            <span>🛒 Ventas manuales</span>
+            <span style="font-weight:700">${features.ventasManuales} (${Math.round(features.ventasManuales/totalFeatures*100)}%)</span>
+          </div>
+          <div class="feature-track">
+            <div class="feature-fill" style="width:${features.ventasManuales/totalFeatures*100}%;background:var(--green)"></div>
+          </div>
+        </div>
+
+        <div class="feature-bar">
+          <div class="feature-label">
+            <span>📒 Fiados registrados</span>
+            <span style="font-weight:700">${features.fiados} (${Math.round(features.fiados/totalFeatures*100)}%)</span>
+          </div>
+          <div class="feature-track">
+            <div class="feature-fill" style="width:${features.fiados/totalFeatures*100}%;background:var(--yellow)"></div>
+          </div>
+        </div>
+
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="card-title" style="margin-bottom:12px">💡 Lectura rápida</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7">
+            ${features.ventasIA > features.ventasManuales
+              ? '✅ Los bodegueros prefieren la IA sobre ventas manuales — el diferenciador está funcionando.'
+              : '⚠️ Más ventas manuales que por IA — considera capacitar a los bodegueros en el uso de voz.'}
+            <br>
+            ${parseFloat(g.totalFiados) > 0
+              ? `📒 Hay ${fmt(g.totalFiados)} en fiados pendientes en total — oportunidad de recordatorio.`
+              : '✅ Sin fiados pendientes significativos.'}
+            <br>
+            ${tiendas.filter(t => !t.activa).length > 0
+              ? `⚠️ ${tiendas.filter(t => !t.activa).length} tienda(s) sin actividad en los últimos 7 días — considera hacer seguimiento.`
+              : '✅ Todas las tiendas con actividad reciente.'}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  document.getElementById('content').innerHTML = html;
+}
+</script>
+</body>
+</html>

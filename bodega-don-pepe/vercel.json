@@ -6,6 +6,14 @@
       "dest": "/api/chat.js"
     },
     {
+      "src": "/api/admin",
+      "dest": "/api/admin.js"
+    },
+    {
+      "src": "/admin",
+      "dest": "/admin.html"
+    },
+    {
       "src": "/sw.js",
       "dest": "/sw.js"
     },
