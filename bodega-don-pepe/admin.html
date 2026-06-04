@@ -149,6 +149,23 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .empty { color: var(--text3); font-size: 13px; text-align: center; padding: 30px; }
+
+/* Rankings */
+.rankings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.ranking-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;
+}
+.ranking-title { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+.podio-item {
+  display: flex; align-items: center; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.podio-item:last-child { border-bottom: none; }
+.podio-pos { font-size: 18px; width: 28px; text-align: center; flex-shrink: 0; }
+.podio-info { flex: 1; min-width: 0; }
+.podio-nombre { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.podio-valor { font-size: 11px; color: var(--text3); margin-top: 1px; }
+.podio-badge { font-size: 12px; font-weight: 700; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -243,6 +260,56 @@ async function cargarDatos() {
       document.getElementById('last-update').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-PE');
     }
   } catch {}
+}
+
+const MEDALLAS = ['🥇', '🥈', '🥉'];
+const COLORES_MEDALLA = ['#f59e0b', '#94a3b8', '#cd7c2f'];
+
+function renderRanking(titulo, tiendas, campo, formatVal, color) {
+  const sorted = [...tiendas]
+    .filter(t => parseFloat(t[campo]) > 0)
+    .sort((a, b) => parseFloat(b[campo]) - parseFloat(a[campo]))
+    .slice(0, 3);
+  if (sorted.length === 0) return `<div class="ranking-card"><div class="ranking-title">${titulo}</div><div class="empty" style="padding:16px">Sin datos aún</div></div>`;
+  return `
+    <div class="ranking-card">
+      <div class="ranking-title">${titulo}</div>
+      ${sorted.map((t, i) => `
+        <div class="podio-item">
+          <div class="podio-pos">${MEDALLAS[i] || (i+1)+'°'}</div>
+          <div class="podio-info">
+            <div class="podio-nombre">${t.nombre}</div>
+            <div class="podio-valor">@${t.propietario}</div>
+          </div>
+          <div class="podio-badge" style="color:${i === 0 ? color : 'var(--text2)'}">${formatVal(t[campo])}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderRankingCrecimiento(tiendas) {
+  const sorted = [...tiendas]
+    .filter(t => parseFloat(t.montoSemana) > 0)
+    .sort((a, b) => b.crecimiento - a.crecimiento)
+    .slice(0, 3);
+  if (sorted.length === 0) return `<div class="ranking-card"><div class="ranking-title">🚀 Más crecimiento</div><div class="empty" style="padding:16px">Sin datos aún</div></div>`;
+  return `
+    <div class="ranking-card">
+      <div class="ranking-title">🚀 Más crecimiento (semana)</div>
+      ${sorted.map((t, i) => {
+        const c = t.crecimiento;
+        const color = c > 0 ? 'var(--green)' : c < 0 ? 'var(--red)' : 'var(--text2)';
+        const signo = c > 0 ? '+' : '';
+        return `
+        <div class="podio-item">
+          <div class="podio-pos">${MEDALLAS[i] || (i+1)+'°'}</div>
+          <div class="podio-info">
+            <div class="podio-nombre">${t.nombre}</div>
+            <div class="podio-valor">S/${parseFloat(t.montoSemana).toFixed(2)} esta semana</div>
+          </div>
+          <div class="podio-badge" style="color:${color}">${signo}${c}%</div>
+        </div>`;
+      }).join('')}
+    </div>`;
 }
 
 function fmt(n) { return 'S/' + parseFloat(n).toFixed(2); }
@@ -350,6 +417,16 @@ function renderDashboard(data) {
           }
         </tbody>
       </table>
+    </div>
+
+    <!-- Rankings -->
+    <div class="section-title" style="margin-top:28px">🏆 Rankings del mes</div>
+    <div class="rankings-grid">
+      ${renderRanking('💰 Mayor vendedor', tiendas, 'montoMes', v => 'S/' + parseFloat(v).toFixed(2), 'var(--green)')}
+      ${renderRanking('🤖 Más uso de IA', tiendas, 'iaUsoMes', v => v + ' consultas', 'var(--blue)')}
+      ${renderRanking('📅 Más constante', tiendas, 'diasActivos', v => v + ' días activos', 'var(--orange)')}
+      ${renderRanking('📦 Más productos', tiendas, 'productos', v => v + ' productos', 'var(--text2)')}
+      ${renderRankingCrecimiento(tiendas)}
     </div>
 
     <!-- Grid inferior -->

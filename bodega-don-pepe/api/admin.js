@@ -52,13 +52,16 @@ async function getDashboard() {
   const inicioMesStr = inicioMes();
   const hace7 = fechaHace(7);
 
+  const hace14 = fechaHace(14);
+
   // Datos base en paralelo
-  const [tiendas, usuarios, todasVentas, todosProductos, todosFiados] = await Promise.all([
+  const [tiendas, usuarios, todasVentas, todosProductos, todosFiados, ventasSemanaAnterior] = await Promise.all([
     sb('GET', 'tiendas?order=created_at.desc'),
     sb('GET', 'usuarios?activo=eq.true&order=created_at.desc'),
     sb('GET', `ventas?order=created_at.desc&created_at=gte.${inicioMesStr}`),
     sb('GET', 'productos?activo=eq.true'),
     sb('GET', 'ventas?es_fiado=eq.true&order=created_at.desc'),
+    sb('GET', `ventas?created_at=gte.${hace14}&created_at=lte.${hace7}`),
   ]);
 
   // ── Métricas globales ────────────────────────────────────────────
@@ -96,6 +99,18 @@ async function getDashboard() {
     const fiadoDeuda = fiadosTienda.reduce((s, v) =>
       s + parseFloat(v.total || 0) - parseFloat(v.monto_pagado || 0), 0);
 
+    // Días activos este mes (días distintos con al menos 1 venta)
+    const diasActivos = new Set(ventasTienda.map(v => v.created_at.slice(0, 10))).size;
+
+    // Crecimiento: ventas esta semana vs semana anterior
+    const ventasSemanaT = todasVentas.filter(v => v.tienda_id === t.id && v.created_at >= hace7);
+    const ventasSemAntT = ventasSemanaAnterior.filter(v => v.tienda_id === t.id);
+    const montoSemana = ventasSemanaT.reduce((s, v) => s + parseFloat(v.total || 0), 0);
+    const montoSemAnt = ventasSemAntT.reduce((s, v) => s + parseFloat(v.total || 0), 0);
+    const crecimiento = montoSemAnt > 0
+      ? Math.round(((montoSemana - montoSemAnt) / montoSemAnt) * 100)
+      : montoSemana > 0 ? 100 : 0;
+
     const ultimaActividad = ventasTienda[0]?.created_at || null;
     const diasSinActividad = ultimaActividad
       ? Math.floor((Date.now() - new Date(ultimaActividad)) / 86400000)
@@ -112,6 +127,9 @@ async function getDashboard() {
       ventasHoy: ventasTiendaHoy.length,
       montoHoy: montoHoy.toFixed(2),
       iaUsoMes,
+      diasActivos,
+      crecimiento,
+      montoSemana: montoSemana.toFixed(2),
       productos: productosTienda.length,
       vendedores: usuariosTienda.filter(u => u.rol === 'vendedor').length,
       fiadoDeuda: fiadoDeuda.toFixed(2),
