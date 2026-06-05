@@ -968,9 +968,7 @@ body {
     <div id="screen-ia" class="screen" style="display:none;flex-direction:column;height:calc(100dvh - 120px);">
       <div class="chat-container" id="chat-msgs" style="flex:1;overflow-y:auto;padding:16px;">
         <div class="bubble ia">
-          👋 ¡Hola! Soy Dona, tu asistente de bodega. Puedo ayudarte a <strong>registrar ventas por voz</strong>, <strong>consultar tu stock</strong> y <strong>responder tus dudas de negocio</strong>.<br><br>
-          📸 <strong>Nuevo:</strong> Toca el ícono de imagen para <strong>subir la foto de una factura</strong> y registro todos los productos automáticamente.<br><br>
-          Prueba decirme: <em>"Vendí 2 coca colas"</em> o <em>"¿Cuánto gané hoy?"</em>
+          <span id="msg-bienvenida">👋 ¡Hola! Soy Dona, tu asistente de bodega. Puedo ayudarte a <strong>registrar ventas por voz</strong>, <strong>consultar tu stock</strong> y <strong>responder tus dudas de negocio</strong>.<br><br>📸 Toca el ícono de imagen para <strong>subir foto de una factura</strong> y registro todo automáticamente.<br><br>Prueba decirme: <em>"Vendí 2 coca colas"</em> o <em>"¿Cuánto gané hoy?"</em></span>
         </div>
       </div>
 
@@ -1450,6 +1448,21 @@ async function iniciarApp() {
   await cargarProductos();
   actualizarSelectVentas();
   navegar('inventario', document.querySelector('.nav-btn'));
+
+  // Onboarding: mensaje proactivo de Dona si inventario vacío
+  if (estadoApp.productos.length === 0) {
+    const msgEl = document.getElementById('msg-bienvenida');
+    if (msgEl) msgEl.innerHTML = `¡Hola <strong>${estadoApp.usuario.nombre}</strong>! 👋 Veo que tu bodega está lista pero sin productos aún.<br><br>
+      Puedes empezar de tres formas:<br>
+      🎤 <strong>Por voz:</strong> dime <em>"Registra Inca Kola 500ml a S/3"</em><br>
+      📸 <strong>Por foto:</strong> toca el ícono de imagen y súbeme la factura de tu proveedor<br>
+      ✏️ <strong>Manual:</strong> ve a Inventario y toca el botón +<br><br>
+      ¡Empieza por donde te sea más fácil!`;
+  }
+
+  // Banner de primer acceso (solo la primera vez, guardado en localStorage)
+  const yaVioBanner = localStorage.getItem('dona_onboarding_' + estadoApp.usuario.tienda_id);
+  if (!yaVioBanner) mostrarBannerPrimerAcceso();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1475,7 +1488,43 @@ function renderInventario(filtro = '') {
   }
 
   if (!prods.length) {
-    lista.innerHTML = '<div style="text-align:center;color:var(--text2);padding:40px">No hay productos</div>';
+    const esInventarioVacio = !filtro && estadoApp.productos.length === 0;
+    if (esInventarioVacio) {
+      lista.innerHTML = `
+        <div style="text-align:center;padding:40px 20px">
+          <div style="font-size:48px;margin-bottom:12px">📦</div>
+          <div style="font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px">Tu inventario está vacío</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:24px">Agrega tus productos para empezar a vender</div>
+          <div style="display:flex;flex-direction:column;gap:10px;max-width:280px;margin:0 auto">
+            <button onclick="navegar('ia',document.querySelector('[onclick*=ia]'))" ontouchend="event.preventDefault();navegar('ia',document.querySelector('[onclick*=ia]'))"
+              style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--text);color:#fff;border:none;border-radius:var(--radius);font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation">
+              <span style="font-size:20px">🎤</span>
+              <div style="text-align:left">
+                <div>Dile a Dona</div>
+                <div style="font-size:11px;opacity:0.7;font-weight:400">"Registra Inca Kola 500ml a S/3"</div>
+              </div>
+            </button>
+            <button onclick="document.querySelector('#inp-factura').click()" ontouchend="event.preventDefault();document.querySelector('#inp-factura').click()"
+              style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--bg2);color:var(--text);border:1.5px solid var(--border);border-radius:var(--radius);font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation">
+              <span style="font-size:20px">📸</span>
+              <div style="text-align:left">
+                <div>Foto de factura</div>
+                <div style="font-size:11px;color:var(--text2);font-weight:400">Registro todos los productos automático</div>
+              </div>
+            </button>
+            <button onclick="abrirModalProducto(null)" ontouchend="event.preventDefault();abrirModalProducto(null)"
+              style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--bg2);color:var(--text);border:1.5px solid var(--border);border-radius:var(--radius);font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation">
+              <span style="font-size:20px">✏️</span>
+              <div style="text-align:left">
+                <div>Agregar manualmente</div>
+                <div style="font-size:11px;color:var(--text2);font-weight:400">Llena el formulario tú mismo</div>
+              </div>
+            </button>
+          </div>
+        </div>`;
+    } else {
+      lista.innerHTML = '<div style="text-align:center;color:var(--text2);padding:40px">No se encontraron productos</div>';
+    }
     return;
   }
 
@@ -2393,6 +2442,52 @@ document.addEventListener('click', e => {
     if (dd) dd.style.display = 'none';
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// ONBOARDING — BANNER PRIMER ACCESO
+// ═══════════════════════════════════════════════════════════════════
+function mostrarBannerPrimerAcceso() {
+  const banner = document.createElement('div');
+  banner.id = 'onboarding-banner';
+  banner.style.cssText = `
+    position:fixed;bottom:80px;left:12px;right:12px;z-index:300;
+    background:var(--text);color:#fff;border-radius:16px;
+    padding:16px 18px;box-shadow:0 8px 32px rgba(0,0,0,0.25);
+    animation:slideUp 0.4s ease;
+  `;
+  banner.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+      <div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:4px">👋 ¡Bienvenido a Dona!</div>
+        <div style="font-size:13px;opacity:0.85;line-height:1.5">
+          Empieza agregando tus productos por voz, foto de factura o manualmente.<br>
+          Dona está lista para ayudarte con todo.
+        </div>
+      </div>
+      <button onclick="cerrarBannerOnboarding()"
+        style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:5px 10px;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap;flex-shrink:0;touch-action:manipulation">
+        ✓ Entendido
+      </button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button onclick="cerrarBannerOnboarding();navegar('ia',document.querySelector('[onclick*=ia]'))"
+        style="flex:1;padding:8px;background:var(--orange);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;touch-action:manipulation">
+        🎤 Habla con Dona
+      </button>
+      <button onclick="cerrarBannerOnboarding();abrirModalProducto(null)"
+        style="flex:1;padding:8px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;touch-action:manipulation">
+        + Agregar producto
+      </button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+}
+
+function cerrarBannerOnboarding() {
+  const b = document.getElementById('onboarding-banner');
+  if (b) b.remove();
+  localStorage.setItem('dona_onboarding_' + estadoApp.usuario.tienda_id, '1');
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // RECORDATORIO DE CREDENCIALES
