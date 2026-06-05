@@ -90,6 +90,7 @@ async function getDashboard() {
     const ventasTienda = todasVentas.filter(v => v.tienda_id === t.id);
     const ventasTiendaHoy = ventasTienda.filter(v => v.created_at.startsWith(hoy));
     const productosTienda = todosProductos.filter(p => p.tienda_id === t.id);
+    const productosConStock = productosTienda.filter(p => parseFloat(p.stock || 0) > 0);
     const usuariosTienda = usuarios.filter(u => u.tienda_id === t.id);
     const fiadosTienda = fiadosPendientes.filter(v => v.tienda_id === t.id);
 
@@ -134,6 +135,7 @@ async function getDashboard() {
       crecimiento,
       montoSemana: montoSemana.toFixed(2),
       productos: productosTienda.length,
+      productosConStock: productosConStock.length,
       vendedores: usuariosTienda.filter(u => u.rol === 'vendedor').length,
       fiadoDeuda: fiadoDeuda.toFixed(2),
       ultimaActividad,
