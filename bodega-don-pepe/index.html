@@ -1916,6 +1916,11 @@ async function enviarFactura(input) {
   const file = input.files[0];
   if (!file) return;
   input.value = '';
+  await enviarArchivoFactura(file);
+}
+
+async function enviarArchivoFactura(file) {
+  if (!file || !file.type.startsWith('image/')) return;
 
   // Comprimir imagen (evita superar límite 4.5MB de Vercel)
   const { base64 } = await comprimirImagen(file);
@@ -2547,6 +2552,22 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#buscar-venta') && !e.target.closest('#dropdown-venta')) {
     const dd = document.getElementById('dropdown-venta');
     if (dd) dd.style.display = 'none';
+  }
+});
+
+// Drag & drop de imagen sobre el chat IA (útil en desktop/laptop)
+document.addEventListener('dragover', e => {
+  if (estadoApp.pantallaActual !== 'ia') return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+
+document.addEventListener('drop', e => {
+  if (estadoApp.pantallaActual !== 'ia') return;
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) {
+    enviarArchivoFactura(file);
   }
 });
 
