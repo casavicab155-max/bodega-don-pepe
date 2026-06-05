@@ -411,7 +411,6 @@ function renderDashboard(data) {
             <th>Vendedores</th>
             <th>Fiado pendiente</th>
             <th>Última actividad</th>
-            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -421,6 +420,16 @@ function renderDashboard(data) {
                 <td>
                   <div class="tienda-nombre">${t.nombre}</div>
                   <div class="tienda-admin">@${t.propietario}</div>
+                  <div style="display:flex;gap:6px;margin-top:6px">
+                    <button onclick="accionTienda('desactivar','${t.id}','${t.nombre.replace(/'/g,'')}')"
+                      style="padding:3px 8px;border-radius:5px;border:1px solid var(--yellow);color:var(--yellow);background:none;font-size:11px;cursor:pointer">
+                      ⏸ Desactivar
+                    </button>
+                    <button onclick="accionTienda('eliminar','${t.id}','${t.nombre.replace(/'/g,'')}')"
+                      style="padding:3px 8px;border-radius:5px;border:1px solid var(--red);color:var(--red);background:none;font-size:11px;cursor:pointer">
+                      🗑 Eliminar
+                    </button>
+                  </div>
                 </td>
                 <td><span class="badge badge-${t.plan}">${t.plan}</span></td>
                 <td>
@@ -436,18 +445,6 @@ function renderDashboard(data) {
                 <td>${t.vendedores}</td>
                 <td><span class="stat-fiado">${parseFloat(t.fiadoDeuda) > 0 ? fmt(t.fiadoDeuda) : '—'}</span></td>
                 <td style="color:var(--text3);font-size:12px">${tiempoRelativo(t.ultimaActividad)}</td>
-                <td>
-                  <div style="display:flex;gap:6px">
-                    <button onclick="accionTienda('desactivar','${t.id}','${t.nombre.replace(/'/g,'')}')"
-                      style="padding:4px 10px;border-radius:6px;border:1px solid var(--yellow);color:var(--yellow);background:none;font-size:11px;cursor:pointer;white-space:nowrap">
-                      ⏸ Desactivar
-                    </button>
-                    <button onclick="accionTienda('eliminar','${t.id}','${t.nombre.replace(/'/g,'')}')"
-                      style="padding:4px 10px;border-radius:6px;border:1px solid var(--red);color:var(--red);background:none;font-size:11px;cursor:pointer;white-space:nowrap">
-                      🗑 Eliminar
-                    </button>
-                  </div>
-                </td>
               </tr>
             `).join('')
           }
