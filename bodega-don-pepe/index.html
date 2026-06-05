@@ -841,11 +841,6 @@ body {
   <div class="login-logo" style="font-size:56px;font-weight:900;background:linear-gradient(135deg,#f97316,#38a8e0);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1;margin-bottom:4px">Dona</div>
   <div class="login-sub">Gestión inteligente para tu bodega</div>
   <div class="login-card">
-    <!-- TABS -->
-    <div style="display:flex;gap:0;margin-bottom:20px;border-radius:8px;overflow:hidden;border:1.5px solid var(--border)">
-      <button id="tab-login" onclick="switchTab('login')" style="flex:1;padding:10px;border:none;background:var(--text);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Ingresar</button>
-      <button id="tab-registro" onclick="switchTab('registro')" style="flex:1;padding:10px;border:none;background:var(--bg3);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Crear cuenta</button>
-    </div>
 
     <!-- LOGIN -->
     <div id="form-login">
@@ -883,11 +878,19 @@ body {
         <label>Contraseña</label>
         <input type="password" id="reg-pass" placeholder="Mínimo 6 caracteres">
       </div>
-      <button class="btn-primary" id="btn-registro" ontouchend="event.preventDefault();registrar()">Crear cuenta</button>
+      <button class="btn-primary" id="btn-registro" ontouchend="event.preventDefault();registrar()">Crear cuenta gratis</button>
+      <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--text2)">
+        ¿Ya tienes cuenta? <span onclick="switchTab('login')" style="color:var(--text);font-weight:600;cursor:pointer;text-decoration:underline">Ingresar</span>
+      </p>
     </div>
 
     <div id="login-error">❌ Usuario o contraseña incorrectos</div>
   </div>
+
+  <!-- Enlace registro debajo del card -->
+  <p id="link-registro" style="margin-top:16px;font-size:13px;color:var(--text2);text-align:center">
+    ¿Eres nuevo? <span onclick="switchTab('registro')" style="color:var(--orange);font-weight:600;cursor:pointer">Regístrate gratis</span>
+  </p>
 </div>
 
 <!-- ── APP ───────────────────────────────────────────────────────── -->
@@ -1366,10 +1369,7 @@ function switchTab(tab) {
   const isLogin = tab === 'login';
   document.getElementById('form-login').style.display = isLogin ? 'block' : 'none';
   document.getElementById('form-registro').style.display = isLogin ? 'none' : 'block';
-  document.getElementById('tab-login').style.background = isLogin ? 'var(--text)' : 'var(--bg3)';
-  document.getElementById('tab-login').style.color = isLogin ? '#fff' : 'var(--text2)';
-  document.getElementById('tab-registro').style.background = isLogin ? 'var(--bg3)' : 'var(--text)';
-  document.getElementById('tab-registro').style.color = isLogin ? 'var(--text2)' : '#fff';
+  document.getElementById('link-registro').style.display = isLogin ? 'block' : 'none';
   document.getElementById('login-error').style.display = 'none';
 }
 
