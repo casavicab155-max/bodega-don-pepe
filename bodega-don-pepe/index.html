@@ -987,10 +987,23 @@ body {
         </div>
         <div class="chat-text-row">
           <input type="text" id="inp-chat" placeholder="Escribe tu mensaje..." />
-          <label for="inp-factura" title="Subir foto de factura" style="display:flex;align-items:center;justify-content:center;width:38px;height:38px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;cursor:pointer;flex-shrink:0;touch-action:manipulation">
+          <button type="button" onclick="abrirMenuFoto()" ontouchend="event.preventDefault();abrirMenuFoto()" title="Subir foto de factura"
+            style="display:flex;align-items:center;justify-content:center;width:38px;height:38px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;cursor:pointer;flex-shrink:0;touch-action:manipulation">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          </label>
+          </button>
+          <!-- Mini menú foto -->
+          <div id="menu-foto" style="display:none;position:absolute;bottom:60px;left:12px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.15);z-index:200;min-width:180px">
+            <button onclick="document.getElementById('inp-factura-camara').click();cerrarMenuFoto()" ontouchend="event.preventDefault();document.getElementById('inp-factura-camara').click();cerrarMenuFoto()"
+              style="width:100%;padding:14px 16px;background:none;border:none;border-bottom:1px solid var(--border);text-align:left;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:10px;touch-action:manipulation;color:var(--text)">
+              📷 <span>Tomar foto</span>
+            </button>
+            <button onclick="document.getElementById('inp-factura').click();cerrarMenuFoto()" ontouchend="event.preventDefault();document.getElementById('inp-factura').click();cerrarMenuFoto()"
+              style="width:100%;padding:14px 16px;background:none;border:none;text-align:left;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:10px;touch-action:manipulation;color:var(--text)">
+              🖼️ <span>Elegir de galería</span>
+            </button>
+          </div>
           <input type="file" id="inp-factura" accept="image/*" style="display:none" onchange="enviarFactura(this)">
+          <input type="file" id="inp-factura-camara" accept="image/*" capture="environment" style="display:none" onchange="enviarFactura(this)">
           <button class="chat-send-btn" onclick="enviarChat()" ontouchend="event.preventDefault();enviarChat()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="#fff" stroke="none"/></svg>
           </button>
@@ -1837,6 +1850,19 @@ async function cobrar() {
 // ═══════════════════════════════════════════════════════════════════
 // IA CHAT + VOZ
 // ═══════════════════════════════════════════════════════════════════
+function abrirMenuFoto() {
+  const menu = document.getElementById('menu-foto');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+function cerrarMenuFoto() {
+  document.getElementById('menu-foto').style.display = 'none';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#menu-foto') && !e.target.closest('[onclick*=abrirMenuFoto]')) {
+    cerrarMenuFoto();
+  }
+});
+
 async function enviarFactura(input) {
   const file = input.files[0];
   if (!file) return;
