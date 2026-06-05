@@ -1013,8 +1013,6 @@ body {
               </label>
             </div>
           </div>
-          <input type="file" id="inp-factura" accept="image/*" style="display:none" onchange="enviarFactura(this)">
-          <input type="file" id="inp-factura-camara" accept="image/*" capture="environment" style="display:none" onchange="enviarFactura(this)">
           <button class="chat-send-btn" onclick="enviarChat()" ontouchend="event.preventDefault();enviarChat()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="#fff" stroke="none"/></svg>
           </button>
@@ -1235,6 +1233,10 @@ body {
     <div style="border-top:1px solid var(--border);padding-top:8px"><strong style="color:var(--text)">💬 Cualquier duda</strong><br>Escríbele a Dona: "ayuda"</div>
   </div>
 </div>
+
+<!-- ── INPUTS DE ARCHIVO GLOBALES (accesibles desde cualquier pantalla) ── -->
+<input type="file" id="inp-factura" accept="image/*" style="display:none" onchange="enviarFactura(this)">
+<input type="file" id="inp-factura-camara" accept="image/*" capture="environment" style="display:none" onchange="enviarFactura(this)">
 
 <!-- ── OVERLAY ESCÁNER ────────────────────────────────────────────── -->
 <div class="scan-overlay" id="scan-overlay">
