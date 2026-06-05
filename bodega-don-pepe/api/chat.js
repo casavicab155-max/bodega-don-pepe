@@ -43,21 +43,22 @@ function generarCodigo(nombre) {
 async function handleAuth({ username, password }) {
   let user = null;
 
-  // Formato nuevo: codigo.usuario (ej: reyes.maria)
+  // Formato nuevo: codigo.usuario (ej: reyes.maria o reyes.Maria — insensible a mayúsculas)
   if (username.includes('.')) {
     const dotIdx = username.indexOf('.');
     const codigo = username.slice(0, dotIdx).toLowerCase().trim();
-    const uname  = username.slice(dotIdx + 1).toLowerCase().trim();
+    const uname  = username.slice(dotIdx + 1).trim();
     const tiendas = await sb('GET', `tiendas?codigo=eq.${encodeURIComponent(codigo)}`);
     if (tiendas && tiendas.length > 0) {
-      const rows = await sb('GET', `usuarios?username=eq.${encodeURIComponent(uname)}&tienda_id=eq.${tiendas[0].id}&activo=eq.true`);
+      // ilike = búsqueda insensible a mayúsculas en Supabase
+      const rows = await sb('GET', `usuarios?username=ilike.${encodeURIComponent(uname)}&tienda_id=eq.${tiendas[0].id}&activo=eq.true`);
       user = rows?.[0] || null;
     }
   }
 
-  // Compatibilidad hacia atrás: buscar por username global (admins legacy)
+  // Compatibilidad hacia atrás: buscar por username global (insensible a mayúsculas)
   if (!user) {
-    const rows = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}&activo=eq.true`);
+    const rows = await sb('GET', `usuarios?username=ilike.${encodeURIComponent(username)}&activo=eq.true`);
     user = rows?.[0] || null;
   }
 
