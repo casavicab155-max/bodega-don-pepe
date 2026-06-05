@@ -1548,7 +1548,7 @@ function renderInventario(filtro = '') {
                 <span style="font-size:20px">🎤</span>
                 <div style="text-align:left"><div>Dile a Dona</div><div style="font-size:11px;opacity:0.7;font-weight:400">"Registra Inca Kola 500ml a S/3"</div></div>
               </button>
-              <button onclick="abrirMenuFoto()" ontouchend="event.preventDefault();abrirMenuFoto()"
+              <button onclick="abrirMenuFoto()"
                 style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--bg2);color:var(--text);border:1.5px solid var(--border);border-radius:var(--radius);font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation">
                 <span style="font-size:20px">📸</span>
                 <div style="text-align:left"><div>Foto de factura</div><div style="font-size:11px;color:var(--text2);font-weight:400">Registro todos los productos automático</div></div>
@@ -1850,16 +1850,24 @@ async function cobrar() {
 // ═══════════════════════════════════════════════════════════════════
 // IA CHAT + VOZ
 // ═══════════════════════════════════════════════════════════════════
+let _menuFotoAbierto = false;
+
 function abrirMenuFoto() {
-  const menu = document.getElementById('menu-foto');
-  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  _menuFotoAbierto = true;
+  document.getElementById('menu-foto').style.display = 'block';
 }
 function cerrarMenuFoto() {
+  _menuFotoAbierto = false;
   document.getElementById('menu-foto').style.display = 'none';
 }
 document.addEventListener('click', e => {
   if (!e.target.closest('#menu-foto') && !e.target.closest('[onclick*=abrirMenuFoto]')) {
     cerrarMenuFoto();
+  }
+});
+document.addEventListener('touchend', e => {
+  if (_menuFotoAbierto && !e.target.closest('#menu-foto') && !e.target.closest('[onclick*=abrirMenuFoto]')) {
+    setTimeout(cerrarMenuFoto, 50);
   }
 });
 
