@@ -411,6 +411,7 @@ function renderDashboard(data) {
             <th>Vendedores</th>
             <th>Fiado pendiente</th>
             <th>Última actividad</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -435,6 +436,18 @@ function renderDashboard(data) {
                 <td>${t.vendedores}</td>
                 <td><span class="stat-fiado">${parseFloat(t.fiadoDeuda) > 0 ? fmt(t.fiadoDeuda) : '—'}</span></td>
                 <td style="color:var(--text3);font-size:12px">${tiempoRelativo(t.ultimaActividad)}</td>
+                <td>
+                  <div style="display:flex;gap:6px">
+                    <button onclick="accionTienda('desactivar','${t.id}','${t.nombre.replace(/'/g,'')}')"
+                      style="padding:4px 10px;border-radius:6px;border:1px solid var(--yellow);color:var(--yellow);background:none;font-size:11px;cursor:pointer;white-space:nowrap">
+                      ⏸ Desactivar
+                    </button>
+                    <button onclick="accionTienda('eliminar','${t.id}','${t.nombre.replace(/'/g,'')}')"
+                      style="padding:4px 10px;border-radius:6px;border:1px solid var(--red);color:var(--red);background:none;font-size:11px;cursor:pointer;white-space:nowrap">
+                      🗑 Eliminar
+                    </button>
+                  </div>
+                </td>
               </tr>
             `).join('')
           }
@@ -536,6 +549,93 @@ function renderDashboard(data) {
 
   document.getElementById('content').innerHTML = html;
 }
+// ─── Acciones sobre tiendas ──────────────────────────────────────────────────
+let _accionPendiente = null;
+
+function accionTienda(tipo, tienda_id, nombre) {
+  _accionPendiente = { tipo, tienda_id, nombre };
+  const modal = document.getElementById('modal-accion');
+  const titulo = document.getElementById('modal-accion-titulo');
+  const desc   = document.getElementById('modal-accion-desc');
+  const btnOk  = document.getElementById('modal-accion-btn');
+  const inp    = document.getElementById('modal-accion-inp');
+
+  if (tipo === 'desactivar') {
+    titulo.textContent = '⏸ Desactivar bodega';
+    desc.innerHTML = `Se desactivará <strong>${nombre}</strong> y todos sus usuarios. Nadie podrá entrar. Los datos se conservan y se puede reactivar después.`;
+    btnOk.textContent = 'Sí, desactivar';
+    btnOk.style.background = 'var(--yellow)';
+  } else {
+    titulo.textContent = '🗑 Eliminar bodega';
+    desc.innerHTML = `<span style="color:var(--red);font-weight:700">¡Esta acción es IRREVERSIBLE!</span><br>Se borrarán <strong>todos los datos</strong> de <strong>${nombre}</strong>: productos, ventas, fiados e historial. No hay forma de recuperarlos.`;
+    btnOk.textContent = 'Sí, ELIMINAR todo';
+    btnOk.style.background = 'var(--red)';
+  }
+
+  inp.value = '';
+  inp.placeholder = `Escribe: ${nombre}`;
+  document.getElementById('modal-accion-error').style.display = 'none';
+  modal.style.display = 'flex';
+}
+
+function cerrarModalAccion() {
+  document.getElementById('modal-accion').style.display = 'none';
+  _accionPendiente = null;
+}
+
+async function confirmarAccionTienda() {
+  if (!_accionPendiente) return;
+  const inp = document.getElementById('modal-accion-inp').value.trim();
+  const errEl = document.getElementById('modal-accion-error');
+
+  if (inp !== _accionPendiente.nombre) {
+    errEl.textContent = 'El nombre no coincide. Escríbelo exactamente como aparece.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const btn = document.getElementById('modal-accion-btn');
+  btn.disabled = true;
+  btn.textContent = 'Procesando...';
+
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: secretGuardado, action: _accionPendiente.tipo === 'desactivar' ? 'desactivarTienda' : 'eliminarTienda', tienda_id: _accionPendiente.tienda_id }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      cerrarModalAccion();
+      cargarDatos();
+    } else {
+      errEl.textContent = data.error || 'Error al procesar';
+      errEl.style.display = 'block';
+    }
+  } catch {
+    errEl.textContent = 'Error de conexión';
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = _accionPendiente?.tipo === 'desactivar' ? 'Sí, desactivar' : 'Sí, ELIMINAR todo';
+  }
+}
 </script>
+
+<!-- Modal confirmación acción tienda -->
+<div id="modal-accion" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:500;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#1e293b;border:1px solid #475569;border-radius:16px;padding:28px;max-width:420px;width:100%">
+    <div id="modal-accion-titulo" style="font-size:17px;font-weight:700;color:#f1f5f9;margin-bottom:12px"></div>
+    <div id="modal-accion-desc" style="font-size:13px;color:#94a3b8;line-height:1.6;margin-bottom:20px"></div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:6px">Para confirmar, escribe el nombre exacto de la bodega:</div>
+    <input id="modal-accion-inp" type="text" style="width:100%;padding:10px 12px;background:#334155;border:1px solid #475569;border-radius:8px;color:#f1f5f9;font-size:14px;margin-bottom:8px" onkeydown="if(event.key==='Enter')confirmarAccionTienda()">
+    <div id="modal-accion-error" style="display:none;color:#ef4444;font-size:12px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px">
+      <button onclick="cerrarModalAccion()" style="flex:1;padding:10px;background:#334155;border:none;color:#94a3b8;border-radius:8px;cursor:pointer;font-size:13px">Cancelar</button>
+      <button id="modal-accion-btn" onclick="confirmarAccionTienda()" style="flex:1;padding:10px;border:none;color:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

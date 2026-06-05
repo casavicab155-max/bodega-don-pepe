@@ -202,6 +202,43 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, ...data });
     }
 
+    if (action === 'desactivarTienda') {
+      const { tienda_id } = body;
+      if (!tienda_id) return res.status(400).json({ ok: false, error: 'Falta tienda_id' });
+      // Desactivar tienda y todos sus usuarios
+      await sb('PATCH', `tiendas?id=eq.${tienda_id}`, { activo: false });
+      await sb('PATCH', `usuarios?tienda_id=eq.${tienda_id}`, { activo: false });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === 'reactivarTienda') {
+      const { tienda_id } = body;
+      if (!tienda_id) return res.status(400).json({ ok: false, error: 'Falta tienda_id' });
+      await sb('PATCH', `tiendas?id=eq.${tienda_id}`, { activo: true });
+      await sb('PATCH', `usuarios?tienda_id=eq.${tienda_id}`, { activo: true });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === 'eliminarTienda') {
+      const { tienda_id } = body;
+      if (!tienda_id) return res.status(400).json({ ok: false, error: 'Falta tienda_id' });
+      // Borrado en orden correcto (respetando foreign keys)
+      const ventas = await sb('GET', `ventas?tienda_id=eq.${tienda_id}&select=id`);
+      if (ventas && ventas.length > 0) {
+        const ids = ventas.map(v => v.id);
+        for (const id of ids) {
+          await sb('DELETE', `detalle_ventas?venta_id=eq.${id}`).catch(() => {});
+        }
+      }
+      await sb('DELETE', `ventas?tienda_id=eq.${tienda_id}`).catch(() => {});
+      await sb('DELETE', `entradas_mercaderia?tienda_id=eq.${tienda_id}`).catch(() => {});
+      await sb('DELETE', `facturas_registradas?tienda_id=eq.${tienda_id}`).catch(() => {});
+      await sb('DELETE', `productos?tienda_id=eq.${tienda_id}`).catch(() => {});
+      await sb('DELETE', `usuarios?tienda_id=eq.${tienda_id}`).catch(() => {});
+      await sb('DELETE', `tiendas?id=eq.${tienda_id}`).catch(() => {});
+      return res.status(200).json({ ok: true });
+    }
+
     return res.status(400).json({ ok: false, error: 'Acción no reconocida' });
   } catch (e) {
     console.error('Admin error:', e);
