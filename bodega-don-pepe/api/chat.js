@@ -31,11 +31,38 @@ async function sb(method, path, body = null) {
   return text ? JSON.parse(text) : null;
 }
 
+// ─── Helper: generar código de tienda desde nombre ───────────────────────────
+function generarCodigo(nombre) {
+  return nombre.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 12);
+}
+
 // ─── Autenticación ───────────────────────────────────────────────────────────
 async function handleAuth({ username, password }) {
-  const rows = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}&activo=eq.true`);
-  if (!rows || rows.length === 0) return { ok: false, error: 'Usuario no encontrado' };
-  const user = rows[0];
+  let user = null;
+
+  // Formato nuevo: codigo.usuario (ej: reyes.maria)
+  if (username.includes('.')) {
+    const dotIdx = username.indexOf('.');
+    const codigo = username.slice(0, dotIdx).toLowerCase().trim();
+    const uname  = username.slice(dotIdx + 1).toLowerCase().trim();
+    const tiendas = await sb('GET', `tiendas?codigo=eq.${encodeURIComponent(codigo)}`);
+    if (tiendas && tiendas.length > 0) {
+      const rows = await sb('GET', `usuarios?username=eq.${encodeURIComponent(uname)}&tienda_id=eq.${tiendas[0].id}&activo=eq.true`);
+      user = rows?.[0] || null;
+    }
+  }
+
+  // Compatibilidad hacia atrás: buscar por username global (admins legacy)
+  if (!user) {
+    const rows = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}&activo=eq.true`);
+    user = rows?.[0] || null;
+  }
+
+  if (!user) return { ok: false, error: 'Usuario no encontrado' };
+
   let passwordOk = false;
   if (user.password_hash && user.password_hash.startsWith('$2')) {
     passwordOk = await bcrypt.compare(password, user.password_hash);
@@ -47,11 +74,14 @@ async function handleAuth({ username, password }) {
     }
   }
   if (!passwordOk) return { ok: false, error: 'Contraseña incorrecta' };
+
   const tiendas = await sb('GET', `tiendas?id=eq.${user.tienda_id}`);
-  const nombre_tienda = tiendas?.[0]?.nombre || '';
+  const tienda = tiendas?.[0];
+  const nombre_tienda = tienda?.nombre || '';
+  const codigo_tienda = tienda?.codigo || '';
   return {
     ok: true,
-    user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol, tienda_id: user.tienda_id, nombre_tienda },
+    user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol, tienda_id: user.tienda_id, nombre_tienda, codigo_tienda },
   };
 }
 
@@ -60,15 +90,21 @@ async function registrarTienda({ nombre_tienda, nombre_admin, password }) {
   if (!nombre_tienda || !nombre_admin || !password) return { ok: false, error: 'Faltan datos obligatorios' };
   const existente = await sb('GET', `usuarios?username=eq.${encodeURIComponent(nombre_admin)}`);
   if (existente && existente.length > 0) return { ok: false, error: 'Ese nombre de usuario ya existe' };
-  const [tienda] = await sb('POST', 'tiendas', { nombre: nombre_tienda, propietario: nombre_admin, plan: 'basico' });
+
+  // Generar código único para la tienda
+  let codigo = generarCodigo(nombre_tienda);
+  const codigoExiste = await sb('GET', `tiendas?codigo=eq.${encodeURIComponent(codigo)}`);
+  if (codigoExiste && codigoExiste.length > 0) codigo = codigo + Math.floor(Math.random() * 90 + 10);
+
+  const [tienda] = await sb('POST', 'tiendas', { nombre: nombre_tienda, propietario: nombre_admin, plan: 'basico', codigo });
   const hashedPassword = await bcrypt.hash(password, 10);
   const [usuario] = await sb('POST', 'usuarios', {
     username: nombre_admin, password_hash: hashedPassword, nombre: nombre_admin, rol: 'admin', tienda_id: tienda.id,
   });
   return {
     ok: true,
-    user: { id: usuario.id, username: usuario.username, nombre: usuario.nombre, rol: usuario.rol, tienda_id: tienda.id },
-    tienda: { id: tienda.id, nombre: tienda.nombre },
+    user: { id: usuario.id, username: usuario.username, nombre: usuario.nombre, rol: usuario.rol, tienda_id: tienda.id, codigo_tienda: codigo, nombre_tienda: tienda.nombre },
+    tienda: { id: tienda.id, nombre: tienda.nombre, codigo },
   };
 }
 
@@ -85,11 +121,15 @@ async function getVendedores(tienda_id) {
   return sb('GET', `usuarios?tienda_id=eq.${tienda_id}&rol=eq.vendedor&activo=eq.true&order=nombre.asc`);
 }
 async function crearVendedor({ tienda_id, nombre, username, password }) {
-  const existente = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}`);
-  if (existente && existente.length > 0) return { ok: false, error: 'Ese usuario ya existe' };
+  // Verificar unicidad solo dentro de la misma tienda
+  const existente = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}&tienda_id=eq.${tienda_id}`);
+  if (existente && existente.length > 0) return { ok: false, error: 'Ese usuario ya existe en tu tienda' };
   const hashedVend = await bcrypt.hash(password, 10);
   await sb('POST', 'usuarios', { username, password_hash: hashedVend, nombre, rol: 'vendedor', tienda_id, activo: true });
-  return { ok: true };
+  // Obtener código de la tienda para mostrar usuario completo
+  const tiendas = await sb('GET', `tiendas?id=eq.${tienda_id}`);
+  const codigo = tiendas?.[0]?.codigo || '';
+  return { ok: true, username_completo: codigo ? `${codigo}.${username}` : username };
 }
 async function desactivarVendedor(id) {
   await sb('PATCH', `usuarios?id=eq.${id}`, { activo: false });

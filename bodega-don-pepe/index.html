@@ -282,6 +282,7 @@ body {
   animation: slideUp 0.25s ease;
 }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
 
 .modal-header {
   display: flex;
@@ -851,7 +852,16 @@ body {
     <div id="form-login">
       <div class="form-group">
         <label>Usuario</label>
-        <input type="text" id="inp-user" placeholder="admin" autocomplete="username">
+        <div style="display:flex;align-items:stretch;gap:0">
+          <input type="text" id="inp-codigo" placeholder="bodega"
+            style="flex:1;border-radius:var(--radius) 0 0 var(--radius);border-right:none;text-align:right;min-width:0"
+            autocomplete="off" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9]/g,'')">
+          <div style="display:flex;align-items:center;padding:0 6px;background:var(--bg3);border:1.5px solid var(--border);border-left:none;border-right:none;font-size:18px;color:var(--text2);user-select:none">.</div>
+          <input type="text" id="inp-user" placeholder="usuario"
+            style="flex:1;border-radius:0 var(--radius) var(--radius) 0;border-left:none;min-width:0"
+            autocomplete="username" oninput="this.value=this.value.toLowerCase().replace(/\s/g,'')">
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:5px">Ej: <strong>losreyes.maria</strong> — tu código de bodega seguido de tu usuario</div>
       </div>
       <div class="form-group">
         <label>Contraseña</label>
@@ -1311,6 +1321,8 @@ function badgeVencimiento(dias) {
 // LOGIN
 // ═══════════════════════════════════════════════════════════════════
 document.getElementById('inp-pass').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+document.getElementById('inp-user').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('inp-pass').focus(); });
+document.getElementById('inp-codigo').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('inp-user').focus(); });
 
 function switchTab(tab) {
   const isLogin = tab === 'login';
@@ -1354,9 +1366,12 @@ async function registrar() {
 }
 
 async function login() {
-  const username = document.getElementById('inp-user').value.trim();
+  const codigo  = document.getElementById('inp-codigo').value.trim();
+  const uname   = document.getElementById('inp-user').value.trim();
   const password = document.getElementById('inp-pass').value.trim();
-  if (!username || !password) return;
+  if (!uname || !password) return;
+  // Combinar: si hay código → codigo.usuario, si no → solo usuario (admin legacy)
+  const username = codigo ? `${codigo}.${uname}` : uname;
 
   const btn = document.getElementById('btn-login');
   const errEl = document.getElementById('login-error');
@@ -1381,6 +1396,7 @@ async function login() {
       if (res.ok) {
         estadoApp.usuario = res.user;
         iniciarApp();
+        mostrarRecordatorioCredenciales(res.user, username);
         return;
       } else {
         errEl.style.display = 'block';
@@ -1404,6 +1420,7 @@ function cerrarSesion() {
   estadoApp = { usuario: null, productos: [], carrito: [], historialChat: [], reconocimiento: null, grabando: false };
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('inp-codigo').value = '';
   document.getElementById('inp-user').value = '';
   document.getElementById('inp-pass').value = '';
 }
@@ -2100,7 +2117,8 @@ async function crearVendedor() {
       nombre, username, password,
     });
     if (res.ok) {
-      toast('✅ Vendedor creado', 'success');
+      const usuarioCompleto = res.username_completo || username;
+      mostrarRecordatorioCredenciales({ username: usuarioCompleto, nombre }, usuarioCompleto, true);
       document.getElementById('vend-nombre').value = '';
       document.getElementById('vend-user').value = '';
       document.getElementById('vend-pass').value = '';
@@ -2375,6 +2393,43 @@ document.addEventListener('click', e => {
     if (dd) dd.style.display = 'none';
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// RECORDATORIO DE CREDENCIALES
+// ═══════════════════════════════════════════════════════════════════
+function mostrarRecordatorioCredenciales(user, usernameCompleto, esNuevo = false) {
+  // Eliminar recordatorio anterior si existe
+  const prev = document.getElementById('cred-banner');
+  if (prev) prev.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'cred-banner';
+  banner.style.cssText = `
+    position:fixed;top:0;left:0;right:0;z-index:999;
+    background:#111827;color:#fff;
+    padding:14px 20px;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    font-size:13px;animation:slideDown 0.3s ease;
+    padding-top:calc(14px + var(--safe-top));
+  `;
+
+  const texto = esNuevo
+    ? `🔑 Usuario creado: <strong style="color:#f97316;font-size:14px">${usernameCompleto}</strong> — comparte esto con el vendedor`
+    : `💾 Tu usuario: <strong style="color:#f97316;font-size:14px">${usernameCompleto}</strong> — guárdalo para entrar siempre`;
+
+  banner.innerHTML = `
+    <span>${texto}</span>
+    <button onclick="document.getElementById('cred-banner').remove()"
+      style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;flex-shrink:0">
+      Entendido ✓
+    </button>
+  `;
+
+  document.body.appendChild(banner);
+
+  // Se cierra automáticamente a los 12 segundos
+  setTimeout(() => { const b = document.getElementById('cred-banner'); if (b) b.remove(); }, 12000);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // CAMBIAR NOMBRE DE TIENDA
