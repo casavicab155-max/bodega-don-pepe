@@ -900,7 +900,10 @@ body {
     <div class="topbar-user">
       <strong id="nav-nombre" onclick="abrirModalPassword(null)" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px" title="Cambiar contraseña">—</strong>
       <span id="nav-rol">—</span>
-      <span style="cursor:pointer;margin-left:8px" onclick="cerrarSesion()">🚪</span>
+      <button onclick="cerrarSesion()" ontouchend="event.preventDefault();cerrarSesion()"
+        style="background:none;border:1px solid var(--border);color:var(--text2);padding:5px 10px;border-radius:8px;font-size:12px;cursor:pointer;touch-action:manipulation;margin-left:6px;display:flex;align-items:center;gap:4px">
+        🚪 Salir
+      </button>
     </div>
   </div>
 
