@@ -1560,7 +1560,7 @@ function renderInventario(filtro = '') {
                 <span style="font-size:20px">🎤</span>
                 <div style="text-align:left"><div>Dile a Dona</div><div style="font-size:11px;opacity:0.7;font-weight:400">"Registra Inca Kola 500ml a S/3"</div></div>
               </button>
-              <button onclick="abrirMenuFoto()"
+              <button id="btn-foto-inventario"
                 style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--bg2);color:var(--text);border:1.5px solid var(--border);border-radius:var(--radius);font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation">
                 <span style="font-size:20px">📸</span>
                 <div style="text-align:left"><div>Foto de factura</div><div style="font-size:11px;color:var(--text2);font-weight:400">Registro todos los productos automático</div></div>
@@ -1586,6 +1586,12 @@ function renderInventario(filtro = '') {
       }
     } else {
       lista.innerHTML = '<div style="text-align:center;color:var(--text2);padding:40px">No se encontraron productos</div>';
+    }
+    // Asignar evento al botón de foto después de renderizar
+    const btnFoto = document.getElementById('btn-foto-inventario');
+    if (btnFoto) {
+      btnFoto.addEventListener('click', abrirMenuFoto);
+      btnFoto.addEventListener('touchend', e => { e.preventDefault(); abrirMenuFoto(); });
     }
     return;
   }
