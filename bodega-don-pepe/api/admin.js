@@ -120,6 +120,7 @@ async function getDashboard() {
       id: t.id,
       nombre: t.nombre,
       propietario: t.propietario,
+      codigo: t.codigo || '',
       plan: t.plan || 'basico',
       creado: t.created_at,
       ventasMes: ventasTienda.length,
