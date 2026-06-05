@@ -875,6 +875,14 @@ body {
         <input type="text" id="reg-user" placeholder="Ej: juanperez">
       </div>
       <div class="form-group">
+        <label>Ciudad</label>
+        <input type="text" id="reg-ciudad" placeholder="Ej: Lima, Arequipa, Trujillo">
+      </div>
+      <div class="form-group">
+        <label>WhatsApp</label>
+        <input type="tel" id="reg-whatsapp" placeholder="Ej: 987654321">
+      </div>
+      <div class="form-group">
         <label>Contraseña</label>
         <input type="password" id="reg-pass" placeholder="Mínimo 6 caracteres">
       </div>
@@ -1375,8 +1383,10 @@ function switchTab(tab) {
 
 async function registrar() {
   const nombre_tienda = document.getElementById('reg-tienda').value.trim();
-  const username = document.getElementById('reg-user').value.trim();
-  const password = document.getElementById('reg-pass').value.trim();
+  const username      = document.getElementById('reg-user').value.trim();
+  const password      = document.getElementById('reg-pass').value.trim();
+  const ciudad        = document.getElementById('reg-ciudad').value.trim();
+  const whatsapp      = document.getElementById('reg-whatsapp').value.trim();
 
   if (!nombre_tienda) { toast('Escribe el nombre de tu bodega', 'error'); return; }
   if (!username) { toast('Escribe tu nombre de usuario', 'error'); return; }
@@ -1387,7 +1397,7 @@ async function registrar() {
   btn.textContent = 'Creando cuenta...';
 
   try {
-    const res = await api({ action: 'registro', nombre_tienda, nombre_admin: username, password });
+    const res = await api({ action: 'registro', nombre_tienda, nombre_admin: username, password, ciudad, whatsapp });
     if (res.ok) {
       estadoApp.usuario = res.user;
       iniciarApp();

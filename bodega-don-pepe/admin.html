@@ -423,6 +423,8 @@ function renderDashboard(data) {
                   <div style="font-size:11px;color:var(--orange);margin-top:3px;font-family:monospace" title="Login de ingreso">
                     🔑 ${t.codigo ? t.codigo + '.' + t.propietario : t.propietario}
                   </div>
+                  ${t.ciudad ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">📍 ${t.ciudad}</div>` : ''}
+                  ${t.whatsapp ? `<div style="font-size:11px;color:var(--text3);margin-top:1px">📱 <a href="https://wa.me/51${t.whatsapp.replace(/\D/g,'')}" target="_blank" style="color:var(--green);text-decoration:none">${t.whatsapp}</a></div>` : ''}
                   <div style="display:flex;gap:6px;margin-top:6px">
                     <button onclick="accionTienda('desactivar','${t.id}','${t.nombre.replace(/'/g,'')}')"
                       style="padding:3px 8px;border-radius:5px;border:1px solid var(--yellow);color:var(--yellow);background:none;font-size:11px;cursor:pointer">

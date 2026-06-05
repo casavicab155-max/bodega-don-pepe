@@ -87,7 +87,7 @@ async function handleAuth({ username, password }) {
 }
 
 // ─── Registrar nueva tienda ───────────────────────────────────────────────────
-async function registrarTienda({ nombre_tienda, nombre_admin, password }) {
+async function registrarTienda({ nombre_tienda, nombre_admin, password, whatsapp, ciudad }) {
   if (!nombre_tienda || !nombre_admin || !password) return { ok: false, error: 'Faltan datos obligatorios' };
   const existente = await sb('GET', `usuarios?username=eq.${encodeURIComponent(nombre_admin)}`);
   if (existente && existente.length > 0) return { ok: false, error: 'Ese nombre de usuario ya existe' };
@@ -97,7 +97,10 @@ async function registrarTienda({ nombre_tienda, nombre_admin, password }) {
   const codigoExiste = await sb('GET', `tiendas?codigo=eq.${encodeURIComponent(codigo)}`);
   if (codigoExiste && codigoExiste.length > 0) codigo = codigo + Math.floor(Math.random() * 90 + 10);
 
-  const [tienda] = await sb('POST', 'tiendas', { nombre: nombre_tienda, propietario: nombre_admin, plan: 'basico', codigo });
+  const [tienda] = await sb('POST', 'tiendas', {
+    nombre: nombre_tienda, propietario: nombre_admin, plan: 'basico', codigo,
+    whatsapp: whatsapp || null, ciudad: ciudad || null,
+  });
   const hashedPassword = await bcrypt.hash(password, 10);
   const [usuario] = await sb('POST', 'usuarios', {
     username: nombre_admin, password_hash: hashedPassword, nombre: nombre_admin, rol: 'admin', tienda_id: tienda.id,

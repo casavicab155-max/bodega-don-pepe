@@ -122,6 +122,8 @@ async function getDashboard() {
       propietario: t.propietario,
       codigo: t.codigo || '',
       plan: t.plan || 'basico',
+      ciudad: t.ciudad || null,
+      whatsapp: t.whatsapp || null,
       creado: t.created_at,
       ventasMes: ventasTienda.length,
       montoMes: montoMes.toFixed(2),
