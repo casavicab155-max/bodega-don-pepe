@@ -685,7 +685,8 @@ async function handleChat({ mensaje, usuario, historial = [] }) {
           : '';
         const alerta = p.stock <= p.stock_minimo ? ' ⚠️ STOCK BAJO' : '';
         const costo = p.precio_costo ? ` | Costo: S/${p.precio_costo}` : '';
-        return `- ${p.nombre} (id:${p.id}) | Stock: ${p.stock} ${p.unidad || 'unidad'}s | Precio: S/${p.precio_venta}${costo}${venc}${alerta}`;
+        const minimo = ` | Mín: ${p.stock_minimo ?? 5}`;
+        return `- ${p.nombre} (id:${p.id}) | Stock: ${p.stock} ${p.unidad || 'unidad'}s | Precio: S/${p.precio_venta}${costo}${minimo}${venc}${alerta}`;
       }).join('\n')
     : 'Sin productos registrados aún.';
 
@@ -837,6 +838,8 @@ Cuando el usuario quiere cambiar cualquier campo (precio, stock, nombre, categor
 </EDITAR>
 - Puedes editar VARIOS productos a la vez.
 - "se dañaron 5 leches" → campos: {"stock": stock_actual - 5}
+- "pon el stock mínimo del aceite en 10" → campos: {"stock_minimo": 10}
+- "cambia el mínimo de todas las gaseosas a 6" → una entrada por cada producto afectado con campos: {"stock_minimo": 6}
 - CONFIRMACIÓN OBLIGATORIA: Si el usuario quiere eliminar un producto o poner stock en 0, PRIMERO pregunta en texto: "¿Seguro que quieres [acción]? Confirma y lo hago." Solo usa eliminar:true tras confirmación.
 
 --- ANULAR ÚLTIMA VENTA ---
