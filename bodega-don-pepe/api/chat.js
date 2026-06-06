@@ -1083,7 +1083,11 @@ module.exports = async (req, res) => {
       case 'getReporteGanancias': result = await getReporteGanancias(body); break;
 
       case 'chat': {
-        const { respuesta, accion } = await handleChat(body);
+        let { respuesta, accion } = await handleChat(body);
+        // Quitar saltos/espacios antes y después de tablas HTML para evitar gaps visuales
+        respuesta = respuesta
+          .replace(/[\r\n\s]*(<table)/gi, '$1')
+          .replace(/<\/table>[\r\n\s]*/gi, '</table>');
 
         try {
           if (accion?.tipo === 'venta') {
