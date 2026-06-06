@@ -1,5 +1,5 @@
 // sw.js — Bodega Don Pepe PWA Service Worker
-const CACHE = 'bodega-v3';
+const CACHE = 'bodega-v4';
 const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -18,13 +18,14 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 
-  // Nunca cachear llamadas a la API ni recursos externos
+  // Nunca cachear llamadas a la API ni recursos externos ni el panel admin
   if (e.request.method !== 'GET') return;
   if (url.includes('/api/')) return;
   if (url.includes('/.netlify/functions/')) return;
   if (url.includes('supabase.co')) return;
   if (url.includes('unpkg.com')) return;
   if (url.includes('openfoodfacts')) return;
+  if (url.includes('/admin')) return;
 
   // Para assets estáticos: cache primero, refresca en background
   e.respondWith(
