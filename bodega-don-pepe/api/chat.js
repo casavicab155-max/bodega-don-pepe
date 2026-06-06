@@ -439,11 +439,13 @@ Analiza esta imagen y extrae TODOS los productos. Responde SOLO con JSON valido,
       "nombre": "nombre del producto",
       "cantidad": numero,
       "precio_costo_unitario": numero_o_null,
+      "igv_categoria": "gravada/exonerada/inafecta/null",
       "unidad": "unidad/caja/paquete/botella/kg",
       "categoria": "bebidas/abarrotes/snacks/lacteos/panaderia/limpieza/general"
     }
   ]
 }
+Para igv_categoria: revisa las secciones OP.GRAVADAS, OP.EXONERADAS, OP.INAFECTAS de la factura para determinar a cual pertenece cada producto. Si es una boleta simple sin esas secciones pon null.
 Si no puedes leer algun campo con certeza ponlo en null.
 Si la imagen no es una factura o boleta responde: {"error": "No es una factura"}`,
           },
@@ -502,7 +504,9 @@ Si la imagen no es una factura o boleta responde: {"error": "No es una factura"}
   for (const item of facturaData.productos) {
     if (!item.nombre || !item.cantidad) continue;
     const cantidad = parseFloat(item.cantidad) || 0;
-    const precio_costo = parseFloat(item.precio_costo_unitario) || 0;
+    // Si el producto es gravado con IGV, el P.U. de la factura es sin IGV → multiplicar por 1.18
+    const igv_factor = item.igv_categoria === 'gravada' ? 1.18 : 1.0;
+    const precio_costo = parseFloat((parseFloat(item.precio_costo_unitario) || 0) * igv_factor).toFixed(2) * 1;
     if (cantidad <= 0) continue;
 
     // Buscar si el producto ya existe
