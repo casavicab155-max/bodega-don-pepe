@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dona · Superadmin</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
 :root {
   --bg:     #0f172a;
@@ -166,6 +167,45 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .podio-nombre { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .podio-valor { font-size: 11px; color: var(--text3); margin-top: 1px; }
 .podio-badge { font-size: 12px; font-weight: 700; flex-shrink: 0; }
+
+/* TABS */
+.tab-nav { display:flex; gap:6px; }
+.tab-btn {
+  padding:6px 16px; border-radius:8px; border:1px solid var(--border);
+  background:transparent; color:var(--text2); font-size:13px; font-weight:600; cursor:pointer;
+}
+.tab-btn.active { background:var(--orange); color:#fff; border-color:var(--orange); }
+.tab-btn:hover:not(.active) { background:var(--bg3); color:var(--text); }
+
+/* CATÁLOGO */
+.cat-card { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
+.cat-form label { display:block; font-size:11px; color:var(--text2); font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:5px; margin-top:14px; }
+.cat-form input, .cat-form select {
+  width:100%; padding:10px 12px; background:var(--bg3); border:1px solid var(--border);
+  border-radius:8px; color:var(--text); font-size:14px;
+}
+.cat-form input:focus, .cat-form select:focus { outline:none; border-color:var(--orange); }
+.cat-form select option { background:var(--bg3); }
+.btn-scan {
+  display:flex; align-items:center; gap:8px; padding:11px 20px;
+  background:var(--blue); color:#fff; border:none; border-radius:10px;
+  font-size:14px; font-weight:700; cursor:pointer; width:100%; justify-content:center;
+}
+.btn-scan:hover { opacity:.9; }
+.btn-guardar {
+  width:100%; padding:13px; background:var(--green); color:#fff; border:none;
+  border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; margin-top:18px;
+}
+.btn-guardar:hover { opacity:.9; }
+.btn-guardar:disabled { opacity:.5; cursor:not-allowed; }
+#scanner-wrap { border-radius:12px; overflow:hidden; margin:12px 0; background:#000; min-height:200px; }
+.notif-existe { background:rgba(234,179,8,.12); border:1px solid var(--yellow); border-radius:10px; padding:12px 14px; font-size:13px; color:var(--yellow); margin:12px 0; }
+.notif-nuevo  { background:rgba(34,197,94,.1); border:1px solid var(--green); border-radius:10px; padding:12px 14px; font-size:13px; color:var(--green); margin:12px 0; }
+.cat-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:16px; }
+.cat-table th { background:var(--bg3); color:var(--text2); padding:7px 10px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+.cat-table td { padding:7px 10px; border-bottom:1px solid var(--border); color:var(--text); vertical-align:middle; }
+.cat-table tr:last-child td { border-bottom:none; }
+.cat-badge { display:inline-block; padding:2px 8px; border-radius:8px; font-size:10px; font-weight:700; background:var(--bg3); color:var(--text2); }
 </style>
 </head>
 <body>
@@ -190,9 +230,13 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <span class="topbar-title">Dona Superadmin</span>
       <span class="topbar-badge">INTERNO</span>
     </div>
+    <div class="tab-nav" id="tab-nav" style="display:none">
+      <button class="tab-btn active" id="tab-dashboard" onclick="mostrarTab('dashboard')">📊 Dashboard</button>
+      <button class="tab-btn" id="tab-catalogo" onclick="mostrarTab('catalogo')">🏷️ Catálogo</button>
+    </div>
     <div class="topbar-right">
       <span class="last-update" id="last-update"></span>
-      <button class="btn-refresh" onclick="cargarDatos()">↻ Actualizar</button>
+      <button class="btn-refresh" id="btn-actualizar" onclick="cargarDatos()">↻ Actualizar</button>
       <button class="btn-refresh" onclick="cerrarSesionAdmin()" style="color:#ef4444;border-color:#ef4444">⏻ Salir</button>
     </div>
   </div>
@@ -233,11 +277,257 @@ function detenerKeepalive() {
 
 function cerrarSesionAdmin() {
   detenerKeepalive();
+  pararScanner();
   secretGuardado = '';
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('tab-nav').style.display = 'none';
   document.getElementById('inp-secret').value = '';
   document.getElementById('content').innerHTML = '';
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+let tabActual = 'dashboard';
+function mostrarTab(tab) {
+  tabActual = tab;
+  document.getElementById('tab-dashboard').classList.toggle('active', tab === 'dashboard');
+  document.getElementById('tab-catalogo').classList.toggle('active', tab === 'catalogo');
+  const btnAct = document.getElementById('btn-actualizar');
+  if (tab === 'dashboard') {
+    btnAct.style.display = '';
+    cargarDatos();
+  } else {
+    btnAct.style.display = 'none';
+    pararScanner();
+    renderCatalogo();
+  }
+}
+
+// ─── Catálogo Global ─────────────────────────────────────────────────────────
+let scanner = null;
+let scannerActivo = false;
+
+async function apiAdmin(action, extra = {}) {
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ secret: secretGuardado, action, ...extra }),
+  });
+  return res.json();
+}
+
+async function renderCatalogo() {
+  document.getElementById('content').innerHTML = `
+    <div class="section-title">Catálogo Global de Productos</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">
+
+      <!-- Panel Scanner + Formulario -->
+      <div class="cat-card">
+        <div style="font-size:14px;font-weight:700;margin-bottom:14px">➕ Registrar producto</div>
+
+        <button class="btn-scan" onclick="toggleScanner()">
+          <span id="scan-icon">📷</span>
+          <span id="scan-label">Abrir cámara y escanear</span>
+        </button>
+
+        <div id="scanner-wrap" style="display:none"></div>
+
+        <div class="cat-form">
+          <label>Código de barras *</label>
+          <input id="cat-codigo" type="text" placeholder="Ej: 7751040017492"
+            oninput="verificarCodigo(this.value)">
+
+          <div id="cat-notif" style="display:none"></div>
+
+          <label>Nombre del producto *</label>
+          <input id="cat-nombre" type="text" placeholder="Ej: Coca Cola 500ml">
+
+          <label>Marca</label>
+          <input id="cat-marca" type="text" placeholder="Ej: Coca Cola">
+
+          <label>Categoría</label>
+          <select id="cat-cat">
+            <option value="bebidas">Bebidas</option>
+            <option value="abarrotes">Abarrotes</option>
+            <option value="snacks">Snacks</option>
+            <option value="lacteos">Lácteos</option>
+            <option value="limpieza">Limpieza</option>
+            <option value="panaderia">Panadería</option>
+            <option value="general" selected>General</option>
+          </select>
+
+          <label>Unidad</label>
+          <select id="cat-unidad">
+            <option value="unidad" selected>Unidad</option>
+            <option value="botella">Botella</option>
+            <option value="lata">Lata</option>
+            <option value="bolsa">Bolsa</option>
+            <option value="caja">Caja</option>
+            <option value="paquete">Paquete</option>
+            <option value="kg">Kilogramo</option>
+            <option value="litro">Litro</option>
+          </select>
+
+          <button class="btn-guardar" id="btn-guardar-cat" onclick="guardarEnCatalogo()">
+            💾 Guardar en catálogo
+          </button>
+        </div>
+      </div>
+
+      <!-- Panel Stats + Lista -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="cat-card" id="cat-stats">
+          <div style="font-size:13px;color:var(--text2)">Cargando estadísticas...</div>
+        </div>
+        <div class="cat-card" style="overflow:auto;max-height:480px">
+          <div style="font-size:14px;font-weight:700;margin-bottom:12px">📋 Últimos registrados</div>
+          <div id="cat-lista">Cargando...</div>
+        </div>
+      </div>
+
+    </div>`;
+
+  cargarListaCatalogo();
+}
+
+async function cargarListaCatalogo() {
+  const data = await apiAdmin('listarCatalogo');
+  if (!data.ok) return;
+
+  const items = data.items || [];
+  document.getElementById('cat-stats').innerHTML = `
+    <div style="font-size:28px;font-weight:800;color:var(--orange)">${items.length >= 50 ? '50+' : items.length}</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:2px">productos en catálogo global</div>`;
+
+  if (items.length === 0) {
+    document.getElementById('cat-lista').innerHTML = '<div style="color:var(--text3);font-size:13px">Sin productos aún — ¡sé el primero en agregar!</div>';
+    return;
+  }
+
+  document.getElementById('cat-lista').innerHTML = `
+    <table class="cat-table">
+      <thead><tr>
+        <th>Código</th><th>Nombre</th><th>Marca</th><th>Categoría</th><th>Unidad</th>
+      </tr></thead>
+      <tbody>
+        ${items.map(p => `<tr>
+          <td style="font-family:monospace;font-size:11px;color:var(--text3)">${p.codigo_barras}</td>
+          <td style="font-weight:600">${p.nombre}</td>
+          <td style="color:var(--text2)">${p.marca || '—'}</td>
+          <td><span class="cat-badge">${p.categoria || 'general'}</span></td>
+          <td style="color:var(--text2)">${p.unidad || 'unidad'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+let verificarTimeout = null;
+function verificarCodigo(codigo) {
+  clearTimeout(verificarTimeout);
+  if (!codigo || codigo.length < 6) {
+    document.getElementById('cat-notif').style.display = 'none';
+    return;
+  }
+  verificarTimeout = setTimeout(() => buscarCodigo(codigo), 600);
+}
+
+async function buscarCodigo(codigo) {
+  const data = await apiAdmin('buscarCatalogo', { codigo_barras: codigo });
+  const notif = document.getElementById('cat-notif');
+  if (data.encontrado && data.producto) {
+    const p = data.producto;
+    notif.className = 'notif-existe';
+    notif.innerHTML = `⚠️ <strong>Ya registrado:</strong> ${p.nombre}${p.marca ? ' · ' + p.marca : ''} · ${p.categoria} · ${p.unidad}`;
+    notif.style.display = 'block';
+    // Pre-cargar datos para editar
+    document.getElementById('cat-nombre').value = p.nombre;
+    document.getElementById('cat-marca').value = p.marca || '';
+    document.getElementById('cat-cat').value = p.categoria || 'general';
+    document.getElementById('cat-unidad').value = p.unidad || 'unidad';
+    document.getElementById('btn-guardar-cat').textContent = '✏️ Actualizar en catálogo';
+  } else {
+    notif.className = 'notif-nuevo';
+    notif.innerHTML = '🆕 Código nuevo — completa los datos para registrarlo';
+    notif.style.display = 'block';
+    document.getElementById('btn-guardar-cat').textContent = '💾 Guardar en catálogo';
+  }
+}
+
+async function guardarEnCatalogo() {
+  const codigo = document.getElementById('cat-codigo').value.trim();
+  const nombre = document.getElementById('cat-nombre').value.trim();
+  if (!codigo || !nombre) {
+    alert('El código y el nombre son obligatorios.');
+    return;
+  }
+  const btn = document.getElementById('btn-guardar-cat');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  const data = await apiAdmin('guardarCatalogo', {
+    codigo_barras: codigo, nombre,
+    marca: document.getElementById('cat-marca').value.trim() || null,
+    categoria: document.getElementById('cat-cat').value,
+    unidad: document.getElementById('cat-unidad').value,
+  });
+
+  btn.disabled = false;
+  if (data.ok) {
+    btn.textContent = '✅ Guardado';
+    setTimeout(() => {
+      // Limpiar formulario
+      ['cat-codigo','cat-nombre','cat-marca'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('cat-notif').style.display = 'none';
+      document.getElementById('btn-guardar-cat').textContent = '💾 Guardar en catálogo';
+      cargarListaCatalogo();
+    }, 1200);
+  } else {
+    btn.textContent = '❌ Error — intenta de nuevo';
+    setTimeout(() => { btn.textContent = '💾 Guardar en catálogo'; }, 2000);
+  }
+}
+
+function toggleScanner() {
+  if (scannerActivo) { pararScanner(); return; }
+  iniciarScanner();
+}
+
+function iniciarScanner() {
+  const wrap = document.getElementById('scanner-wrap');
+  wrap.style.display = 'block';
+  wrap.innerHTML = '<div id="qr-reader" style="width:100%"></div>';
+  document.getElementById('scan-icon').textContent = '⏹';
+  document.getElementById('scan-label').textContent = 'Detener cámara';
+
+  scanner = new Html5Qrcode('qr-reader');
+  scannerActivo = true;
+
+  scanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 250, height: 120 } },
+    (codigo) => {
+      document.getElementById('cat-codigo').value = codigo;
+      buscarCodigo(codigo);
+      pararScanner();
+    },
+    () => {}
+  ).catch(() => {
+    wrap.innerHTML = '<div style="color:var(--red);padding:16px;font-size:13px">❌ No se pudo acceder a la cámara. Verifica los permisos del navegador.</div>';
+    scannerActivo = false;
+  });
+}
+
+function pararScanner() {
+  if (scanner && scannerActivo) {
+    scanner.stop().catch(() => {});
+    scanner = null;
+  }
+  scannerActivo = false;
+  const wrap = document.getElementById('scanner-wrap');
+  if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
+  const icon = document.getElementById('scan-icon');
+  const label = document.getElementById('scan-label');
+  if (icon) icon.textContent = '📷';
+  if (label) label.textContent = 'Abrir cámara y escanear';
 }
 
 async function entrar() {
@@ -260,6 +550,7 @@ async function entrar() {
     secretGuardado = secret;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
+    document.getElementById('tab-nav').style.display = 'flex';
     renderDashboard(data);
     document.getElementById('last-update').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-PE');
     iniciarKeepalive();

@@ -244,6 +244,30 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
+    if (action === 'buscarCatalogo') {
+      const { codigo_barras } = body;
+      if (!codigo_barras) return res.status(400).json({ ok: false, error: 'Falta código' });
+      const rows = await sb('GET', `catalogo_global?codigo_barras=eq.${encodeURIComponent(codigo_barras)}`);
+      return res.status(200).json({ ok: true, encontrado: rows && rows.length > 0, producto: rows?.[0] || null });
+    }
+
+    if (action === 'guardarCatalogo') {
+      const { codigo_barras, nombre, marca, categoria, unidad } = body;
+      if (!codigo_barras || !nombre) return res.status(400).json({ ok: false, error: 'Falta código o nombre' });
+      const data = { codigo_barras, nombre, marca: marca || null, categoria: categoria || 'general', unidad: unidad || 'unidad' };
+      try {
+        await sb('POST', 'catalogo_global', data);
+      } catch {
+        await sb('PATCH', `catalogo_global?codigo_barras=eq.${encodeURIComponent(codigo_barras)}`, { nombre, marca: marca || null, categoria: categoria || 'general', unidad: unidad || 'unidad' });
+      }
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === 'listarCatalogo') {
+      const rows = await sb('GET', 'catalogo_global?order=created_at.desc&limit=50');
+      return res.status(200).json({ ok: true, items: rows || [] });
+    }
+
     return res.status(400).json({ ok: false, error: 'Acción no reconocida' });
   } catch (e) {
     console.error('Admin error:', e);
