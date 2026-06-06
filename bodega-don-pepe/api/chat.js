@@ -438,13 +438,14 @@ Analiza esta imagen y extrae TODOS los productos. Responde SOLO con JSON valido,
     {
       "nombre": "nombre del producto",
       "cantidad": numero,
-      "precio_costo_unitario": numero_o_null,
+      "importe_linea": numero_o_null,
       "igv_categoria": "gravada/exonerada/inafecta/null",
       "unidad": "unidad/caja/paquete/botella/kg",
       "categoria": "bebidas/abarrotes/snacks/lacteos/panaderia/limpieza/general"
     }
   ]
 }
+importe_linea es el valor de la columna IMPORTE o SUBTOTAL de esa linea (ya incluye descuentos aplicados, NO incluye IGV). Es el dato mas importante para calcular el costo real.
 Para igv_categoria: revisa las secciones OP.GRAVADAS, OP.EXONERADAS, OP.INAFECTAS de la factura para determinar a cual pertenece cada producto. Si es una boleta simple sin esas secciones pon null.
 Si no puedes leer algun campo con certeza ponlo en null.
 Si la imagen no es una factura o boleta responde: {"error": "No es una factura"}`,
@@ -504,10 +505,16 @@ Si la imagen no es una factura o boleta responde: {"error": "No es una factura"}
   for (const item of facturaData.productos) {
     if (!item.nombre || !item.cantidad) continue;
     const cantidad = parseFloat(item.cantidad) || 0;
-    // Si el producto es gravado con IGV, el P.U. de la factura es sin IGV → multiplicar por 1.18
-    const igv_factor = item.igv_categoria === 'gravada' ? 1.18 : 1.0;
-    const precio_costo = parseFloat((parseFloat(item.precio_costo_unitario) || 0) * igv_factor).toFixed(2) * 1;
     if (cantidad <= 0) continue;
+    const igv_factor = item.igv_categoria === 'gravada' ? 1.18 : 1.0;
+    // Preferir importe_linea (ya incluye descuentos, sin IGV) sobre precio_costo_unitario
+    // importe_linea / cantidad = costo unitario sin IGV → × igv_factor = costo real pagado
+    let precio_costo = 0;
+    if (item.importe_linea && parseFloat(item.importe_linea) > 0) {
+      precio_costo = parseFloat(((parseFloat(item.importe_linea) / cantidad) * igv_factor).toFixed(2));
+    } else if (item.precio_costo_unitario && parseFloat(item.precio_costo_unitario) > 0) {
+      precio_costo = parseFloat((parseFloat(item.precio_costo_unitario) * igv_factor).toFixed(2));
+    }
 
     // Buscar si el producto ya existe
     const existente = productosExistentes.find(p => norm(p.nombre) === norm(item.nombre)) ||
