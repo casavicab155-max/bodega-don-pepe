@@ -494,24 +494,49 @@ function toggleScanner() {
 function iniciarScanner() {
   const wrap = document.getElementById('scanner-wrap');
   wrap.style.display = 'block';
-  wrap.innerHTML = '<div id="qr-reader" style="width:100%"></div>';
+  wrap.innerHTML = `
+    <div id="qr-reader" style="width:100%"></div>
+    <div style="text-align:center;font-size:11px;color:#94a3b8;padding:6px 0 8px">
+      📦 Centra el código de barras horizontalmente en la línea roja
+    </div>`;
   document.getElementById('scan-icon').textContent = '⏹';
   document.getElementById('scan-label').textContent = 'Detener cámara';
 
-  scanner = new Html5Qrcode('qr-reader');
+  // Formatos de código de barras de productos (EAN-13 es el estándar peruano)
+  const formatos = [
+    Html5QrcodeSupportedFormats.EAN_13,
+    Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.UPC_A,
+    Html5QrcodeSupportedFormats.UPC_E,
+    Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.ITF,
+    Html5QrcodeSupportedFormats.QR_CODE,
+  ];
+
+  scanner = new Html5Qrcode('qr-reader', { formatsToSupport: formatos, verbose: false });
   scannerActivo = true;
+
+  // Calcular qrbox según el ancho real disponible
+  const anchoDisp = wrap.offsetWidth || 320;
+  const qrW = Math.min(anchoDisp - 40, 300);
 
   scanner.start(
     { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 250, height: 120 } },
+    {
+      fps: 15,
+      qrbox: { width: qrW, height: Math.round(qrW * 0.35) }, // rect horizontal para barcode
+      aspectRatio: 2.5,
+    },
     (codigo) => {
       document.getElementById('cat-codigo').value = codigo;
       buscarCodigo(codigo);
       pararScanner();
     },
     () => {}
-  ).catch(() => {
-    wrap.innerHTML = '<div style="color:var(--red);padding:16px;font-size:13px">❌ No se pudo acceder a la cámara. Verifica los permisos del navegador.</div>';
+  ).catch((err) => {
+    wrap.innerHTML = '<div style="color:#ef4444;padding:16px;font-size:13px">❌ No se pudo acceder a la cámara. Verifica los permisos del navegador.</div>';
+    console.error('Scanner error:', err);
     scannerActivo = false;
   });
 }
