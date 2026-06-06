@@ -2059,7 +2059,15 @@ function agregarBurbuja(quien, texto, typing = false, esAccion = false) {
   const cont = document.getElementById('chat-msgs');
   const div = document.createElement('div');
   div.className = `bubble ${quien}${typing ? ' typing' : ''}${esAccion ? ' ok-action' : ''}`;
-  if (!typing) div.innerHTML = texto.replace(/\n/g, '<br>');
+  if (!typing) {
+    const html = texto
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')  // **negrita**
+      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')               // *cursiva*
+      .replace(/\n+(<table)/gi, '$1')                         // quitar saltos antes de <table>
+      .replace(/<\/table>\n+/gi, '</table>')                  // quitar saltos después de </table>
+      .replace(/\n/g, '<br>');                                 // resto → <br>
+    div.innerHTML = html;
+  }
   cont.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
   return div;
