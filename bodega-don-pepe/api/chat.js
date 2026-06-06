@@ -432,9 +432,20 @@ async function analizarFactura({ imagen_base64, media_type, tienda_id, usuario, 
 Solo procesas documentos peruanos (con RUC, soles S/, IGV, emitidos en Peru).
 Si el documento no es peruano responde: {"error": "Solo se aceptan facturas peruanas"}
 Si la imagen no es una factura o boleta responde: {"error": "No es una factura"}
-De lo contrario, extrae TODOS los productos y responde SOLO con JSON valido, sin texto adicional:
+
+De lo contrario sigue este ALGORITMO paso a paso antes de responder:
+
+PASO 1 — Lee el IMPORTE TOTAL de la factura (el monto final a pagar, con todo incluido). Guardalo como referencia.
+
+PASO 2 — En la tabla de productos hay varias columnas numericas (SUBTOTAL, IMPORTE, TOTAL, VALOR VTA, etc.). Suma cada columna por separado. La columna cuya suma sea igual (o la mas cercana) al IMPORTE TOTAL del paso 1 es la columna correcta. Esa columna ya incluye IGV y descuentos.
+
+PASO 3 — Para cada producto: costo_unitario_final = valor_de_esa_columna_correcta / cantidad.
+
+PASO 4 — Si ninguna columna suma al IMPORTE TOTAL (boletas simples sin columna de totales), entonces busca el precio unitario y verifica: si OP.GRAVADAS existe y la suma de precios unitarios x cantidad = OP.GRAVADAS (sin IGV), multiplica por 1.18 para obtener el costo real.
+
+Responde SOLO con JSON valido, sin texto adicional:
 {
-  "numero_factura": "numero de serie como F001-00012345 o null si no se ve",
+  "numero_factura": "numero de serie como F001-00012345 o null",
   "proveedor": "nombre del proveedor o null",
   "fecha": "fecha en formato YYYY-MM-DD o null",
   "productos": [
@@ -447,13 +458,7 @@ De lo contrario, extrae TODOS los productos y responde SOLO con JSON valido, sin
     }
   ]
 }
-costo_unitario_final es el precio real pagado por cada unidad, con IGV incluido y descuentos ya aplicados. Calculalo asi:
-1. Toma el valor de la columna IMPORTE, TOTAL o SUBTOTAL de esa linea (despues de descuentos).
-2. Divide entre la cantidad para obtener el costo por unidad.
-3. Si ese valor de linea NO incluye IGV (el producto aparece en OP.GRAVADAS y el IMPORTE TOTAL de la factura es mayor que la suma de los subtotales de linea), multiplica por 1.18.
-4. Si el IMPORTE TOTAL de la factura coincide con la suma de los totales de linea, el IGV ya esta incluido, no multipliques.
-Verifica tu calculo: costo_unitario_final x cantidad x numero_de_productos debe aproximarse al IMPORTE TOTAL de la factura.
-Si no puedes calcular algun campo con certeza ponlo en null.`,
+Si no puedes calcular un campo con certeza ponlo en null.`,
           },
         ],
       }],
