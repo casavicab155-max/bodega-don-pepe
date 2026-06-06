@@ -2072,16 +2072,36 @@ function agregarBurbuja(quien, texto, typing = false, esAccion = false) {
   const div = document.createElement('div');
   div.className = `bubble ${quien}${typing ? ' typing' : ''}${esAccion ? ' ok-action' : ''}`;
   if (!typing) {
+    // 1. Markdown básico + saltos
     const html = texto
-      .replace(/\r\n|\r/g, '\n')                                              // normalizar \r\n
-      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')                   // **negrita**
-      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')                               // *cursiva*
-      .replace(/(\n|<br\s*\/?>)*\s*(<table)/gi, '<div class="table-scroll">$2') // strip todo antes de <table>
-      .replace(/<\/table>(\n|<br\s*\/?>|\s)*/gi, '</table></div>')            // strip todo después
-      .replace(/\n/g, '<br>')                                                  // \n → <br>
-      .replace(/(<br\s*\/?>){2,}/gi, '<br>')                                  // colapsar br múltiples
-      .replace(/(<br>)<div class="table-scroll">/gi, '<div class="table-scroll">'); // br antes del wrapper
+      .replace(/\r\n|\r/g, '\n')
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
     div.innerHTML = html;
+
+    // 2. DOM: eliminar <br> adyacentes a cada <table> y envolverla en .table-scroll
+    div.querySelectorAll('table').forEach(table => {
+      // Quitar <br> y nodos de texto vacíos ANTES de la tabla
+      let node = table.previousSibling;
+      while (node && (node.nodeName === 'BR' || (node.nodeType === 3 && node.textContent.trim() === ''))) {
+        const prev = node.previousSibling;
+        node.remove();
+        node = prev;
+      }
+      // Quitar <br> y nodos de texto vacíos DESPUÉS de la tabla
+      node = table.nextSibling;
+      while (node && (node.nodeName === 'BR' || (node.nodeType === 3 && node.textContent.trim() === ''))) {
+        const next = node.nextSibling;
+        node.remove();
+        node = next;
+      }
+      // Envolver en scroll container
+      const wrapper = document.createElement('div');
+      wrapper.className = 'table-scroll';
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    });
   }
   cont.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
