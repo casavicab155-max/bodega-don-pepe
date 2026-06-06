@@ -2556,14 +2556,19 @@ document.addEventListener('click', e => {
 });
 
 // Drag & drop de imagen sobre el chat IA (útil en desktop/laptop)
+function _screenIaActiva() {
+  const s = document.getElementById('screen-ia');
+  return s && s.style.display !== 'none' && getComputedStyle(s).display !== 'none';
+}
+
 document.addEventListener('dragover', e => {
-  if (estadoApp.pantallaActual !== 'ia') return;
+  if (!_screenIaActiva()) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = 'copy';
 });
 
 document.addEventListener('drop', e => {
-  if (estadoApp.pantallaActual !== 'ia') return;
+  if (!_screenIaActiva()) return;
   e.preventDefault();
   const file = e.dataTransfer.files[0];
   if (file && file.type.startsWith('image/')) {
