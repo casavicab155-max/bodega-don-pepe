@@ -52,7 +52,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 #app { display: none; }
 .topbar {
   background: var(--bg2); border-bottom: 1px solid var(--border);
-  padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
   position: sticky; top: 0; z-index: 10;
 }
 .topbar-brand { display: flex; align-items: center; gap: 10px; }
@@ -318,55 +319,66 @@ async function apiAdmin(action, extra = {}) {
 
 async function renderCatalogo() {
   document.getElementById('content').innerHTML = `
-    <div class="section-title">Catálogo Global de Productos</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">
+    <div style="max-width:560px;margin:0 auto">
 
-      <!-- Panel Scanner + Formulario -->
-      <div class="cat-card">
-        <div style="font-size:14px;font-weight:700;margin-bottom:14px">➕ Registrar producto</div>
+      <!-- Stat banner -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">🏷️ Catálogo Global</div>
+        <div id="cat-stats" style="font-size:13px;color:var(--orange);font-weight:700">Cargando...</div>
+      </div>
 
+      <!-- Scanner -->
+      <div class="cat-card" style="margin-bottom:14px">
         <button class="btn-scan" onclick="toggleScanner()">
           <span id="scan-icon">📷</span>
-          <span id="scan-label">Abrir cámara y escanear</span>
+          <span id="scan-label">Escanear código de barras</span>
         </button>
+        <div id="scanner-wrap" style="display:none;margin-top:10px"></div>
+      </div>
 
-        <div id="scanner-wrap" style="display:none"></div>
-
+      <!-- Formulario -->
+      <div class="cat-card" style="margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text)">➕ Datos del producto</div>
         <div class="cat-form">
           <label>Código de barras *</label>
-          <input id="cat-codigo" type="text" placeholder="Ej: 7751040017492"
-            oninput="verificarCodigo(this.value)">
+          <input id="cat-codigo" type="number" inputmode="numeric" placeholder="Ej: 7751040017492"
+            oninput="verificarCodigo(this.value)" style="font-size:16px">
 
           <div id="cat-notif" style="display:none"></div>
 
           <label>Nombre del producto *</label>
-          <input id="cat-nombre" type="text" placeholder="Ej: Coca Cola 500ml">
+          <input id="cat-nombre" type="text" placeholder="Ej: Coca Cola 500ml" style="font-size:16px">
 
           <label>Marca</label>
-          <input id="cat-marca" type="text" placeholder="Ej: Coca Cola">
+          <input id="cat-marca" type="text" placeholder="Ej: Coca Cola" style="font-size:16px">
 
-          <label>Categoría</label>
-          <select id="cat-cat">
-            <option value="bebidas">Bebidas</option>
-            <option value="abarrotes">Abarrotes</option>
-            <option value="snacks">Snacks</option>
-            <option value="lacteos">Lácteos</option>
-            <option value="limpieza">Limpieza</option>
-            <option value="panaderia">Panadería</option>
-            <option value="general" selected>General</option>
-          </select>
-
-          <label>Unidad</label>
-          <select id="cat-unidad">
-            <option value="unidad" selected>Unidad</option>
-            <option value="botella">Botella</option>
-            <option value="lata">Lata</option>
-            <option value="bolsa">Bolsa</option>
-            <option value="caja">Caja</option>
-            <option value="paquete">Paquete</option>
-            <option value="kg">Kilogramo</option>
-            <option value="litro">Litro</option>
-          </select>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label>Categoría</label>
+              <select id="cat-cat" style="font-size:15px">
+                <option value="bebidas">Bebidas</option>
+                <option value="abarrotes">Abarrotes</option>
+                <option value="snacks">Snacks</option>
+                <option value="lacteos">Lácteos</option>
+                <option value="limpieza">Limpieza</option>
+                <option value="panaderia">Panadería</option>
+                <option value="general" selected>General</option>
+              </select>
+            </div>
+            <div>
+              <label>Unidad</label>
+              <select id="cat-unidad" style="font-size:15px">
+                <option value="unidad" selected>Unidad</option>
+                <option value="botella">Botella</option>
+                <option value="lata">Lata</option>
+                <option value="bolsa">Bolsa</option>
+                <option value="caja">Caja</option>
+                <option value="paquete">Paquete</option>
+                <option value="kg">Kg</option>
+                <option value="litro">Litro</option>
+              </select>
+            </div>
+          </div>
 
           <button class="btn-guardar" id="btn-guardar-cat" onclick="guardarEnCatalogo()">
             💾 Guardar en catálogo
@@ -374,15 +386,10 @@ async function renderCatalogo() {
         </div>
       </div>
 
-      <!-- Panel Stats + Lista -->
-      <div style="display:flex;flex-direction:column;gap:16px">
-        <div class="cat-card" id="cat-stats">
-          <div style="font-size:13px;color:var(--text2)">Cargando estadísticas...</div>
-        </div>
-        <div class="cat-card" style="overflow:auto;max-height:480px">
-          <div style="font-size:14px;font-weight:700;margin-bottom:12px">📋 Últimos registrados</div>
-          <div id="cat-lista">Cargando...</div>
-        </div>
+      <!-- Lista reciente -->
+      <div class="cat-card">
+        <div style="font-size:13px;font-weight:700;margin-bottom:12px">📋 Últimos registrados</div>
+        <div id="cat-lista" style="overflow-x:auto">Cargando...</div>
       </div>
 
     </div>`;
@@ -395,9 +402,8 @@ async function cargarListaCatalogo() {
   if (!data.ok) return;
 
   const items = data.items || [];
-  document.getElementById('cat-stats').innerHTML = `
-    <div style="font-size:28px;font-weight:800;color:var(--orange)">${items.length >= 50 ? '50+' : items.length}</div>
-    <div style="font-size:12px;color:var(--text2);margin-top:2px">productos en catálogo global</div>`;
+  const total = items.length >= 50 ? '50+' : items.length;
+  document.getElementById('cat-stats').textContent = `${total} producto${total !== 1 ? 's' : ''} registrados`;
 
   if (items.length === 0) {
     document.getElementById('cat-lista').innerHTML = '<div style="color:var(--text3);font-size:13px">Sin productos aún — ¡sé el primero en agregar!</div>';
