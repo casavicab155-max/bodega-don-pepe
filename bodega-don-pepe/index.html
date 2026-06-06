@@ -2073,13 +2073,14 @@ function agregarBurbuja(quien, texto, typing = false, esAccion = false) {
   div.className = `bubble ${quien}${typing ? ' typing' : ''}${esAccion ? ' ok-action' : ''}`;
   if (!typing) {
     const html = texto
-      .replace(/\r\n|\r/g, '\n')                                    // normalizar \r\n → \n
-      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')         // **negrita**
-      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')                     // *cursiva*
-      .replace(/\n+(<table)/gi, '<div class="table-scroll">$1')     // wrap + quitar saltos antes
-      .replace(/<\/table>\n*/gi, '</table></div>')                   // cerrar wrapper
-      .replace(/\n/g, '<br>')                                        // \n → <br>
-      .replace(/(<br>){3,}/gi, '<br><br>');                         // máx 2 saltos seguidos
+      .replace(/\r\n|\r/g, '\n')                                              // normalizar \r\n
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')                   // **negrita**
+      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')                               // *cursiva*
+      .replace(/(\n|<br\s*\/?>)*\s*(<table)/gi, '<div class="table-scroll">$2') // strip todo antes de <table>
+      .replace(/<\/table>(\n|<br\s*\/?>|\s)*/gi, '</table></div>')            // strip todo después
+      .replace(/\n/g, '<br>')                                                  // \n → <br>
+      .replace(/(<br\s*\/?>){2,}/gi, '<br>')                                  // colapsar br múltiples
+      .replace(/(<br>)<div class="table-scroll">/gi, '<div class="table-scroll">'); // br antes del wrapper
     div.innerHTML = html;
   }
   cont.appendChild(div);
