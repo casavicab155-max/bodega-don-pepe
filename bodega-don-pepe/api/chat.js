@@ -441,16 +441,19 @@ De lo contrario, extrae TODOS los productos y responde SOLO con JSON valido, sin
     {
       "nombre": "nombre del producto",
       "cantidad": numero,
-      "importe_linea": numero_o_null,
-      "igv_categoria": "gravada/exonerada/inafecta/null",
+      "costo_unitario_final": numero_o_null,
       "unidad": "unidad/caja/paquete/botella/kg",
       "categoria": "bebidas/abarrotes/snacks/lacteos/panaderia/limpieza/general"
     }
   ]
 }
-importe_linea: valor de la columna IMPORTE o SUBTOTAL de esa linea (ya incluye descuentos, NO incluye IGV). Es el dato clave para calcular el costo real.
-igv_categoria: revisa las secciones OP.GRAVADAS, OP.EXONERADAS, OP.INAFECTAS para identificar a cual pertenece cada producto. Si es boleta simple sin esas secciones pon null.
-Si no puedes leer algun campo con certeza ponlo en null.`,
+costo_unitario_final es el precio real pagado por cada unidad, con IGV incluido y descuentos ya aplicados. Calculalo asi:
+1. Toma el valor de la columna IMPORTE, TOTAL o SUBTOTAL de esa linea (despues de descuentos).
+2. Divide entre la cantidad para obtener el costo por unidad.
+3. Si ese valor de linea NO incluye IGV (el producto aparece en OP.GRAVADAS y el IMPORTE TOTAL de la factura es mayor que la suma de los subtotales de linea), multiplica por 1.18.
+4. Si el IMPORTE TOTAL de la factura coincide con la suma de los totales de linea, el IGV ya esta incluido, no multipliques.
+Verifica tu calculo: costo_unitario_final x cantidad x numero_de_productos debe aproximarse al IMPORTE TOTAL de la factura.
+Si no puedes calcular algun campo con certeza ponlo en null.`,
           },
         ],
       }],
@@ -508,14 +511,8 @@ Si no puedes leer algun campo con certeza ponlo en null.`,
     if (!item.nombre || !item.cantidad) continue;
     const cantidad = parseFloat(item.cantidad) || 0;
     if (cantidad <= 0) continue;
-    const igv_factor = item.igv_categoria === 'gravada' ? 1.18 : 1.0;
-    // Preferir importe_linea (ya incluye descuentos, sin impuesto) para calcular costo real
-    let precio_costo = 0;
-    if (item.importe_linea && parseFloat(item.importe_linea) > 0) {
-      precio_costo = parseFloat(((parseFloat(item.importe_linea) / cantidad) * igv_factor).toFixed(2));
-    } else if (item.precio_costo_unitario && parseFloat(item.precio_costo_unitario) > 0) {
-      precio_costo = parseFloat((parseFloat(item.precio_costo_unitario) * igv_factor).toFixed(2));
-    }
+    // Claude calcula costo_unitario_final directamente (IGV + descuentos ya considerados)
+    const precio_costo = parseFloat(parseFloat(item.costo_unitario_final || 0).toFixed(2));
 
     // Buscar si el producto ya existe
     const existente = productosExistentes.find(p => norm(p.nombre) === norm(item.nombre)) ||
