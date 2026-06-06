@@ -428,12 +428,13 @@ async function analizarFactura({ imagen_base64, media_type, tienda_id, usuario, 
           },
           {
             type: 'text',
-            text: `Eres un asistente que extrae datos de facturas o boletas de proveedores peruanos.
+            text: `Eres un asistente que extrae datos de facturas o boletas de proveedores. Pueden ser de cualquier pais.
 Analiza esta imagen y extrae TODOS los productos. Responde SOLO con JSON valido, sin texto adicional:
 {
-  "numero_factura": "numero de serie como F001-00012345 o null si no se ve",
+  "numero_factura": "numero de serie o null si no se ve",
   "proveedor": "nombre del proveedor o null",
   "fecha": "fecha en formato YYYY-MM-DD o null",
+  "tasa_impuesto": numero_porcentaje_o_null,
   "productos": [
     {
       "nombre": "nombre del producto",
@@ -445,8 +446,9 @@ Analiza esta imagen y extrae TODOS los productos. Responde SOLO con JSON valido,
     }
   ]
 }
-importe_linea es el valor de la columna IMPORTE o SUBTOTAL de esa linea (ya incluye descuentos aplicados, NO incluye IGV). Es el dato mas importante para calcular el costo real.
-Para igv_categoria: revisa las secciones OP.GRAVADAS, OP.EXONERADAS, OP.INAFECTAS de la factura para determinar a cual pertenece cada producto. Si es una boleta simple sin esas secciones pon null.
+tasa_impuesto: busca el porcentaje del impuesto al consumo (IGV, IVA, etc.) en la factura. Ejemplos: IGV 18 → 18, IVA 15% → 15, IVA 12% → 12. Si no hay impuesto o no se ve, pon null.
+importe_linea: valor de la columna IMPORTE, TOTAL o SUBTOTAL de esa linea (ya incluye descuentos, NO incluye impuesto). Es el dato clave para calcular el costo real.
+igv_categoria: si la factura tiene secciones OP.GRAVADAS/OP.EXONERADAS/OP.INAFECTAS o equivalentes, identifica a cual pertenece cada producto. Si no hay esas secciones pero hay impuesto en el total, pon "gravada". Si es boleta simple sin impuesto separado, pon null.
 Si no puedes leer algun campo con certeza ponlo en null.
 Si la imagen no es una factura o boleta responde: {"error": "No es una factura"}`,
           },
@@ -506,9 +508,10 @@ Si la imagen no es una factura o boleta responde: {"error": "No es una factura"}
     if (!item.nombre || !item.cantidad) continue;
     const cantidad = parseFloat(item.cantidad) || 0;
     if (cantidad <= 0) continue;
-    const igv_factor = item.igv_categoria === 'gravada' ? 1.18 : 1.0;
-    // Preferir importe_linea (ya incluye descuentos, sin IGV) sobre precio_costo_unitario
-    // importe_linea / cantidad = costo unitario sin IGV → × igv_factor = costo real pagado
+    // Tasa de impuesto extraída de la factura (IGV 18%, IVA 15%, etc.) o 18% por defecto
+    const tasa = parseFloat(facturaData.tasa_impuesto) || 18;
+    const igv_factor = item.igv_categoria === 'gravada' ? 1 + tasa / 100 : 1.0;
+    // Preferir importe_linea (ya incluye descuentos, sin impuesto) para calcular costo real
     let precio_costo = 0;
     if (item.importe_linea && parseFloat(item.importe_linea) > 0) {
       precio_costo = parseFloat(((parseFloat(item.importe_linea) / cantidad) * igv_factor).toFixed(2));
