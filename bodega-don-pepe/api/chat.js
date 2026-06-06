@@ -435,13 +435,13 @@ Si la imagen no es una factura o boleta responde: {"error": "No es una factura"}
 
 De lo contrario sigue este ALGORITMO paso a paso antes de responder:
 
-PASO 1 — Lee el IMPORTE TOTAL de la factura (el monto final a pagar, con todo incluido). Guardalo como referencia.
+PASO 1 — Identifica el IMPORTE TOTAL correcto: es el subtotal de productos + IGV + ISC (si hay). NO incluye PERCEPCION ni RETENCION DE IGV (esos son pagos adicionales al estado, no el costo del producto). Si ves campos como "MONTO TOTAL", "TOTAL A PAGAR" o "TOTAL COMPROBANTE", usa el que equivalga a productos+impuestos sin percepciones ni retenciones. Guardalo como referencia.
 
-PASO 2 — En la tabla de productos hay varias columnas numericas (SUBTOTAL, IMPORTE, TOTAL, VALOR VTA, etc.). Suma cada columna por separado. La columna cuya suma sea igual (o la mas cercana) al IMPORTE TOTAL del paso 1 es la columna correcta. Esa columna ya incluye IGV y descuentos.
+PASO 2 — En la tabla de productos hay varias columnas numericas (SUBTOTAL, IMPORTE, TOTAL, VALOR VTA, PRECIO TOTAL, etc.). Suma cada columna de totales de linea por separado. La columna cuya suma sea igual (o la mas cercana) al IMPORTE TOTAL del paso 1 es la columna correcta. Esa columna ya incluye IGV, ISC y descuentos.
 
 PASO 3 — Para cada producto: costo_unitario_final = valor_de_esa_columna_correcta / cantidad.
 
-PASO 4 — Si ninguna columna suma al IMPORTE TOTAL (boletas simples sin columna de totales), entonces busca el precio unitario y verifica: si OP.GRAVADAS existe y la suma de precios unitarios x cantidad = OP.GRAVADAS (sin IGV), multiplica por 1.18 para obtener el costo real.
+PASO 4 — Si ninguna columna de la tabla suma al IMPORTE TOTAL (ejemplo: la tabla solo muestra precios unitarios o subtotales sin IGV), verifica si la suma de la columna de totales de linea coincide con OP.GRAVADAS + OP.EXONERADAS + OP.INAFECTAS (total sin IGV). Si coincide, ese es el total sin IGV: costo_unitario_final = (total_linea / cantidad) x 1.18 para productos gravados, o / cantidad sin multiplicar para exonerados e inafectos.
 
 Responde SOLO con JSON valido, sin texto adicional:
 {
