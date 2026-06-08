@@ -39,6 +39,25 @@ function generarCodigo(nombre) {
     .slice(0, 12);
 }
 
+// ─── Buscar usuarios de una bodega por código (pre-login, sin auth) ──────────
+async function getUsuariosBodega({ codigo }) {
+  if (!codigo) return { ok: false, error: 'Falta el código de bodega' };
+  const tiendas = await sb('GET', `tiendas?codigo=eq.${encodeURIComponent(codigo.toLowerCase().trim())}&activo=eq.true`);
+  if (!tiendas || tiendas.length === 0) {
+    return { ok: false, error: 'Código de bodega no encontrado' };
+  }
+  const tienda = tiendas[0];
+  const rows = await sb('GET', `usuarios?tienda_id=eq.${tienda.id}&activo=eq.true&select=username,nombre,rol&order=nombre.asc`);
+  if (!rows || rows.length === 0) {
+    return { ok: false, error: 'No hay usuarios activos en esta bodega' };
+  }
+  return {
+    ok: true,
+    nombre_tienda: tienda.nombre,
+    usuarios: rows.map(u => ({ username: u.username, nombre: u.nombre, rol: u.rol })),
+  };
+}
+
 // ─── Autenticación ───────────────────────────────────────────────────────────
 async function handleAuth({ username, password }) {
   let user = null;
@@ -1063,8 +1082,9 @@ module.exports = async (req, res) => {
     let result;
 
     switch (action) {
-      case 'auth':           result = await handleAuth(body); break;
-      case 'registro':       result = await registrarTienda(body); break;
+      case 'auth':              result = await handleAuth(body); break;
+      case 'getUsuariosBodega': result = await getUsuariosBodega(body); break;
+      case 'registro':          result = await registrarTienda(body); break;
       case 'getProductos':   result = await getProductos(body.tienda_id); break;
       case 'saveProducto':   result = await saveProducto(body.producto, body.tienda_id); break;
       case 'getVentas':      result = await getVentas(body.fechaInicio, body.fechaFin, body.tienda_id); break;

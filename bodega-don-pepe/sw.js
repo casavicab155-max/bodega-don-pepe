@@ -1,5 +1,5 @@
 // sw.js — Bodega Don Pepe PWA Service Worker
-const CACHE = 'bodega-v5';
+const CACHE = 'bodega-v6';
 const ASSETS = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', e => {
