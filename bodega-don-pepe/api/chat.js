@@ -39,6 +39,20 @@ function generarCodigo(nombre) {
     .slice(0, 12);
 }
 
+// ─── Historial de ingresos de un producto ────────────────────────────────────
+async function getHistorialProducto({ producto_id, tienda_id }) {
+  if (!producto_id || !tienda_id) return { ok: false, error: 'Faltan parámetros' };
+  const [entradas, facturas] = await Promise.all([
+    sb('GET', `entradas_mercaderia?producto_id=eq.${producto_id}&tienda_id=eq.${tienda_id}&order=created_at.desc&limit=5`),
+    sb('GET', `facturas_registradas?tienda_id=eq.${tienda_id}&order=created_at.desc&limit=1`),
+  ]);
+  return {
+    ok: true,
+    entradas: entradas || [],
+    ultimaFactura: facturas?.[0] || null,
+  };
+}
+
 // ─── Buscar usuarios de una bodega por código (pre-login, sin auth) ──────────
 async function getUsuariosBodega({ codigo }) {
   if (!codigo) return { ok: false, error: 'Falta el código de bodega' };
@@ -1082,8 +1096,9 @@ module.exports = async (req, res) => {
     let result;
 
     switch (action) {
-      case 'auth':              result = await handleAuth(body); break;
-      case 'getUsuariosBodega': result = await getUsuariosBodega(body); break;
+      case 'auth':                 result = await handleAuth(body); break;
+      case 'getUsuariosBodega':    result = await getUsuariosBodega(body); break;
+      case 'getHistorialProducto': result = await getHistorialProducto(body); break;
       case 'registro':          result = await registrarTienda(body); break;
       case 'getProductos':   result = await getProductos(body.tienda_id); break;
       case 'saveProducto':   result = await saveProducto(body.producto, body.tienda_id); break;

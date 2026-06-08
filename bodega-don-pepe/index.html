@@ -1219,6 +1219,19 @@ body {
         </button>
       </div>
     </div>
+    <!-- Ver más detalles — solo visible al editar un producto existente -->
+    <div id="prod-ver-mas-wrap" style="display:none;text-align:center;margin:6px 0 2px">
+      <span id="prod-ver-mas-btn" onclick="toggleHistorialProducto()"
+        style="font-size:13px;color:var(--orange);cursor:pointer;text-decoration:underline;user-select:none">
+        ver más detalles ▾
+      </span>
+    </div>
+    <div id="prod-historial" style="display:none;margin-bottom:8px;border-top:1px solid var(--border);padding-top:12px">
+      <div id="prod-historial-contenido" style="font-size:13px;color:var(--text2)">
+        <div style="text-align:center;padding:12px 0">Cargando...</div>
+      </div>
+    </div>
+
     <button class="btn-primary" onclick="guardarProducto()" ontouchend="event.preventDefault();guardarProducto()" id="btn-guardar-prod">Guardar</button>
     <button class="btn-danger" id="btn-desactivar-prod" onclick="desactivarProducto()" style="display:none">Desactivar producto</button>
     <input type="hidden" id="prod-id">
@@ -1754,6 +1767,16 @@ function abrirModalProducto(id) {
   document.getElementById('prod-barras').value = prod?.codigo_barras || '';
   document.getElementById('btn-desactivar-prod').style.display = prod ? 'block' : 'none';
 
+  // Historial: solo mostrar el enlace cuando es edición, resetearlo siempre
+  _historialCargado = false;
+  const verMasWrap = document.getElementById('prod-ver-mas-wrap');
+  const historialDiv = document.getElementById('prod-historial');
+  const historialContenido = document.getElementById('prod-historial-contenido');
+  verMasWrap.style.display = prod ? 'block' : 'none';
+  historialDiv.style.display = 'none';
+  document.getElementById('prod-ver-mas-btn').textContent = 'ver más detalles ▾';
+  historialContenido.innerHTML = '<div style="text-align:center;padding:12px 0">Cargando...</div>';
+
   modal.classList.add('open');
 }
 
@@ -1766,6 +1789,76 @@ function cerrarModal() {
 document.getElementById('modal-producto').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-producto')) cerrarModal();
 });
+
+// ── Historial del producto ──────────────────────────────────────────
+let _historialCargado = false;
+
+async function toggleHistorialProducto() {
+  const historialDiv = document.getElementById('prod-historial');
+  const btn = document.getElementById('prod-ver-mas-btn');
+  const abierto = historialDiv.style.display !== 'none';
+
+  if (abierto) {
+    historialDiv.style.display = 'none';
+    btn.textContent = 'ver más detalles ▾';
+    return;
+  }
+
+  historialDiv.style.display = 'block';
+  btn.textContent = 'ocultar detalles ▴';
+
+  if (_historialCargado) return; // ya cargado, no volver a pedir
+
+  try {
+    const prod = _prodEditando;
+    const res = await api({
+      action: 'getHistorialProducto',
+      producto_id: prod.id,
+      tienda_id: prod.tienda_id || estadoApp.usuario.tienda_id,
+    });
+    _historialCargado = true;
+    renderHistorialProducto(res);
+  } catch {
+    document.getElementById('prod-historial-contenido').innerHTML =
+      '<div style="color:var(--red);padding:8px 0">No se pudo cargar el historial.</div>';
+  }
+}
+
+function renderHistorialProducto({ entradas, ultimaFactura }) {
+  const cont = document.getElementById('prod-historial-contenido');
+  if (!entradas || entradas.length === 0) {
+    cont.innerHTML = '<div style="color:var(--text2);padding:8px 0">Sin historial de ingresos registrado.</div>';
+    return;
+  }
+
+  const filas = entradas.map(e => {
+    const fecha = e.created_at ? new Date(e.created_at).toLocaleDateString('es-PE', { day:'2-digit', month:'short', year:'numeric' }) : '—';
+    const origen = e.origen === 'factura' ? '📄 Factura' : '✏️ Manual';
+    const proveedor = e.proveedor || '—';
+    const costo = e.precio_costo ? `S/${parseFloat(e.precio_costo).toFixed(2)} c/u` : '—';
+    return `
+      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+          <span style="font-weight:600;color:var(--text)">${fecha}</span>
+          <span style="font-size:11px;background:var(--bg3);padding:2px 7px;border-radius:10px">${origen}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:12px">
+          <span>📦 <strong>${e.cantidad}</strong> unidades ingresadas</span>
+          <span>💰 Costo: <strong>${costo}</strong></span>
+          <span>🏭 Proveedor: <strong>${proveedor}</strong></span>
+          ${ultimaFactura && e === entradas[0] && ultimaFactura.numero_factura
+            ? `<span>🧾 Factura: <strong>${ultimaFactura.numero_factura}</strong></span>`
+            : '<span></span>'}
+        </div>
+      </div>`;
+  }).join('');
+
+  cont.innerHTML = `
+    <div style="font-weight:700;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+      Últimos ingresos
+    </div>
+    ${filas}`;
+}
 
 async function guardarProducto() {
   const nombre = document.getElementById('prod-nombre').value.trim();
