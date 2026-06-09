@@ -441,7 +441,18 @@ async function analizarFactura({ imagen_base64, media_type, tienda_id, usuario, 
   // 1. Hash de la imagen para detectar foto duplicada exacta
   const hash_imagen = crypto.createHash('sha256').update(imagen_base64).digest('hex').slice(0, 32);
 
-  // 2. Claude Vision extrae los productos de la factura
+  // 2. Obtener inventario actual ANTES de llamar a Vision para incluirlo en el prompt
+  const productosExistentes = await getProductos(tienda_id);
+  const listaInventario = productosExistentes.length > 0
+    ? `\n\nINVENTARIO ACTUAL DE LA TIENDA (para comparar nombres):\n` +
+      productosExistentes.map(p => `- [ID:${p.id}] ${p.nombre}`).join('\n') +
+      `\n\nPara cada producto de la factura, agrega:\n` +
+      `- "match_tipo": "mismo" si claramente es el mismo producto del inventario (aunque el nombre esté abreviado o en mayúsculas), ` +
+      `"incierto" si podría ser el mismo pero no estás seguro, "nuevo" si definitivamente es un producto diferente o no está en el inventario.\n` +
+      `- "match_id": el ID numérico del producto del inventario si match_tipo es "mismo" o "incierto", null si es "nuevo".`
+    : '';
+
+  // 3. Claude Vision extrae los productos y clasifica matches contra el inventario
   const visionRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -451,7 +462,7 @@ async function analizarFactura({ imagen_base64, media_type, tienda_id, usuario, 
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      max_tokens: 2048,
       messages: [{
         role: 'user',
         content: [
@@ -475,6 +486,7 @@ PASO 2 — En la tabla de productos hay varias columnas numericas (SUBTOTAL, IMP
 PASO 3 — Para cada producto: costo_unitario_final = valor_de_esa_columna_correcta / cantidad.
 
 PASO 4 — Si ninguna columna de la tabla suma al IMPORTE TOTAL (ejemplo: la tabla solo muestra precios unitarios o subtotales sin IGV), verifica si la suma de la columna de totales de linea coincide con OP.GRAVADAS + OP.EXONERADAS + OP.INAFECTAS (total sin IGV). Si coincide, ese es el total sin IGV: costo_unitario_final = (total_linea / cantidad) x 1.18 para productos gravados, o / cantidad sin multiplicar para exonerados e inafectos.
+${listaInventario}
 
 Responde SOLO con JSON valido, sin texto adicional:
 {
@@ -483,11 +495,13 @@ Responde SOLO con JSON valido, sin texto adicional:
   "fecha": "fecha en formato YYYY-MM-DD o null",
   "productos": [
     {
-      "nombre": "nombre del producto",
+      "nombre": "nombre del producto tal como aparece en la factura",
       "cantidad": numero,
       "costo_unitario_final": numero_o_null,
       "unidad": "unidad/caja/paquete/botella/kg",
-      "categoria": "bebidas/abarrotes/snacks/lacteos/panaderia/limpieza/general"
+      "categoria": "bebidas/abarrotes/snacks/lacteos/panaderia/limpieza/general",
+      "match_tipo": "mismo/incierto/nuevo",
+      "match_id": numero_o_null
     }
   ]
 }
@@ -515,7 +529,7 @@ Si no puedes calcular un campo con certeza ponlo en null.`,
     return { ok: false, error: 'No encontré productos en la imagen. Intenta con una foto más clara.' };
   }
 
-  // 3. Verificar duplicado (salvo que el usuario confirmó que quiere registrarla igual)
+  // 4. Verificar duplicado (salvo que el usuario confirmó que quiere registrarla igual)
   if (!confirmar_duplicado) {
     const checksPromises = [];
     if (facturaData.numero_factura)
@@ -539,37 +553,45 @@ Si no puedes calcular un campo con certeza ponlo en null.`,
     }
   }
 
-  // 4. Obtener inventario actual de la tienda
-  const productosExistentes = await getProductos(tienda_id);
+  // 4. Procesar productos usando la clasificación de Claude
+  // (productosExistentes ya fue cargado antes de la llamada Vision)
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
-
-  // Score de similitud por palabras en común (para match incierto)
-  const scoreMatch = (a, b) => {
-    const words = s => norm(s).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2);
-    const wa = words(a), wb = words(b);
-    if (!wa.length || !wb.length) return 0;
-    const shared = wa.filter(w => wb.some(v => v === w || v.includes(w) || w.includes(v)));
-    return shared.length / Math.max(wa.length, wb.length);
-  };
-
   const resultados = { nuevos: [], actualizados: [], precio_cambio: [], sin_precio_venta: [], inciertos: [] };
 
   for (const item of facturaData.productos) {
     if (!item.nombre || !item.cantidad) continue;
     const cantidad = parseFloat(item.cantidad) || 0;
     if (cantidad <= 0) continue;
-    // Claude calcula costo_unitario_final directamente (IGV + descuentos ya considerados)
     const precio_costo = parseFloat(parseFloat(item.costo_unitario_final || 0).toFixed(2));
 
-    // Tier 1: match exacto | Tier 2: uno contiene al otro
-    const existente = productosExistentes.find(p => norm(p.nombre) === norm(item.nombre)) ||
-      productosExistentes.find(p => norm(p.nombre).includes(norm(item.nombre)) || norm(item.nombre).includes(norm(p.nombre)));
+    // Clasificación de Claude: "mismo" | "incierto" | "nuevo"
+    // Fallback: si Claude no clasificó, usar match exacto/contains como antes
+    const matchTipo = item.match_tipo || 'fallback';
+    const matchId   = item.match_id ? Number(item.match_id) : null;
 
-    // Tier 3: palabras en común (incierto — se pregunta al bodeguero)
-    const fuzzy = !existente && productosExistentes
-      .map(p => ({ p, score: scoreMatch(p.nombre, item.nombre) }))
-      .filter(x => x.score >= 0.35)
-      .sort((a, b) => b.score - a.score)[0]?.p;
+    let existente = null;
+    if (matchTipo === 'mismo' && matchId) {
+      existente = productosExistentes.find(p => p.id === matchId);
+    } else if (matchTipo === 'incierto' && matchId) {
+      const candidato = productosExistentes.find(p => p.id === matchId);
+      if (candidato) {
+        resultados.inciertos.push({
+          nombre_factura: item.nombre,
+          cantidad,
+          precio_costo,
+          categoria: item.categoria || 'general',
+          unidad: item.unidad || 'unidad',
+          proveedor: facturaData.proveedor || null,
+          producto_existente: { id: candidato.id, nombre: candidato.nombre, stock: parseFloat(candidato.stock) || 0 },
+        });
+        continue;
+      }
+    } else if (matchTipo === 'fallback') {
+      // Claude no devolvió match_tipo — usar comparación clásica como respaldo
+      existente = productosExistentes.find(p => norm(p.nombre) === norm(item.nombre)) ||
+        productosExistentes.find(p => norm(p.nombre).includes(norm(item.nombre)) || norm(item.nombre).includes(norm(p.nombre)));
+    }
+    // matchTipo === 'nuevo' → existente queda null → se crea producto nuevo
 
     if (existente) {
       // Sumar stock
@@ -603,17 +625,6 @@ Si no puedes calcular un campo con certeza ponlo en null.`,
       }).catch(() => {});
 
       resultados.actualizados.push({ nombre: existente.nombre, cantidad, stock_nuevo: nuevo_stock });
-    } else if (fuzzy) {
-      // Match incierto — no procesar, devolver al bodeguero para que confirme
-      resultados.inciertos.push({
-        nombre_factura: item.nombre,
-        cantidad,
-        precio_costo,
-        categoria: item.categoria || 'general',
-        unidad: item.unidad || 'unidad',
-        proveedor: facturaData.proveedor || null,
-        producto_existente: { id: fuzzy.id, nombre: fuzzy.nombre, stock: parseFloat(fuzzy.stock) || 0 },
-      });
     } else {
       // Producto nuevo — crear sin precio de venta por ahora
       if (precio_costo > 0) {
