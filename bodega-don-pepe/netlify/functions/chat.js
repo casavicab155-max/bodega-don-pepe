@@ -3,18 +3,62 @@
 // Netlify Functions + Anthropic Claude + Supabase
 // =============================================
 
+const crypto            = require('crypto');
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://eoyvzkargirskdttuxmn.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVveXZ6a2FyZ2lyc2tkdHR1eG1uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0OTQyNzIsImV4cCI6MjA5NTA3MDI3Mn0.k3Znq41STrhcpVW-9ETvtojN6qZqEsovV-VC_Nxox6I';
+const SUPABASE_URL      = process.env.SUPABASE_URL || 'https://eoyvzkargirskdttuxmn.supabase.co';
+const SUPABASE_KEY      = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+const TOKEN_SECRET      = process.env.TOKEN_SECRET;
+const ALLOWED_ORIGIN    = process.env.ALLOWED_ORIGIN || '';
+
+// ─── Tokens de sesión (HMAC-SHA256, 24 h) ─────────────────────────────────────
+const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+function generarToken(payload) {
+  const data = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + TOKEN_EXPIRY_MS })).toString('base64url');
+  const sig  = crypto.createHmac('sha256', TOKEN_SECRET || '').update(data).digest('hex');
+  return `${data}.${sig}`;
+}
+
+function verificarToken(token) {
+  if (!TOKEN_SECRET) throw new Error('TOKEN_SECRET no configurado');
+  if (!token) throw new Error('Sin sesión activa');
+  const dot = token.lastIndexOf('.');
+  if (dot < 1) throw new Error('Token inválido');
+  const data     = token.slice(0, dot);
+  const sig      = token.slice(dot + 1);
+  const expected = crypto.createHmac('sha256', TOKEN_SECRET).update(data).digest('hex');
+  const aBuf = Buffer.from(sig.padEnd(expected.length, '0').slice(0, expected.length));
+  const bBuf = Buffer.from(expected);
+  if (aBuf.length !== bBuf.length || !crypto.timingSafeEqual(aBuf, bBuf)) throw new Error('Token inválido');
+  let payload;
+  try { payload = JSON.parse(Buffer.from(data, 'base64url').toString()); } catch { throw new Error('Token corrupto'); }
+  if (payload.exp < Date.now()) throw new Error('Sesión expirada. Inicia sesión nuevamente.');
+  return payload;
+}
+
+// ─── Rate limiting para login ─────────────────────────────────────────────────
+const _loginAttempts = new Map();
+function checkLoginRate(key) {
+  const now = Date.now();
+  const e   = _loginAttempts.get(key);
+  if (!e || now - e.since > 15 * 60 * 1000) { _loginAttempts.set(key, { count: 1, since: now }); return null; }
+  if (e.count >= 5) return `Demasiados intentos. Espera ${Math.ceil((15 * 60 * 1000 - (now - e.since)) / 60000)} minuto(s).`;
+  e.count++;
+  return null;
+}
+function clearLoginRate(key) { _loginAttempts.delete(key); }
 
 // ─── Cabeceras CORS ───────────────────────────────────────────────────────────
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Content-Type': 'application/json',
-};
+function buildCors(reqOrigin) {
+  const origin = (!ALLOWED_ORIGIN || reqOrigin === ALLOWED_ORIGIN) ? reqOrigin || 'null' : '';
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json',
+    'Vary': 'Origin',
+  };
+}
 
 // ─── Helper: llamar a Supabase REST API ──────────────────────────────────────
 async function sb(method, path, body = null) {
@@ -39,15 +83,27 @@ async function sb(method, path, body = null) {
 
 // ─── Autenticación ───────────────────────────────────────────────────────────
 async function handleAuth({ username, password }) {
+  const key = (username || '').toLowerCase().trim();
+  const rateErr = checkLoginRate(key);
+  if (rateErr) return { ok: false, error: rateErr };
+
   const rows = await sb('GET', `usuarios?username=eq.${encodeURIComponent(username)}&activo=eq.true`);
-  if (!rows || rows.length === 0) return { ok: false, error: 'Usuario no encontrado' };
+  if (!rows || rows.length === 0) {
+    console.warn('[SECURITY] AUTH_FAILURE user_not_found', key);
+    return { ok: false, error: 'Usuario o contraseña incorrectos' };
+  }
   const user = rows[0];
-  // En producción usar bcrypt; por ahora comparación directa
-  if (user.password_hash !== password) return { ok: false, error: 'Contraseña incorrecta' };
+  if (user.password_hash !== password) {
+    console.warn('[SECURITY] AUTH_FAILURE wrong_password', key);
+    return { ok: false, error: 'Usuario o contraseña incorrectos' };
+  }
+  clearLoginRate(key);
   const tiendas = await sb('GET', `tiendas?id=eq.${user.tienda_id}`);
   const nombre_tienda = tiendas?.[0]?.nombre || '';
+  const token = generarToken({ user_id: user.id, tienda_id: user.tienda_id, rol: user.rol, nombre: user.nombre });
   return {
     ok: true,
+    token,
     user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol, tienda_id: user.tienda_id, nombre_tienda },
   };
 }
@@ -356,10 +412,12 @@ Nunca uses el formato <VENTA> o <ENTRADA> para preguntas generales.`;
 }
 
 // ─── Cambiar contraseña ───────────────────────────────────────────────────────
-async function cambiarPassword({ usuario_id, password_actual, nueva_password, target_id, solicitante_rol }) {
+async function cambiarPassword({ usuario_id, password_actual, nueva_password, target_id, solicitante_rol, tienda_id }) {
   if (!nueva_password || nueva_password.length < 6) return { ok: false, error: 'La nueva contraseña debe tener al menos 6 caracteres' };
   if (target_id && target_id !== usuario_id) {
     if (solicitante_rol !== 'admin') return { ok: false, error: 'Sin permisos' };
+    const check = await sb('GET', `usuarios?id=eq.${target_id}&tienda_id=eq.${tienda_id}`);
+    if (!check || check.length === 0) return { ok: false, error: 'Usuario no encontrado en tu tienda' };
     await sb('PATCH', `usuarios?id=eq.${target_id}`, { password_hash: nueva_password });
     return { ok: true };
   }
@@ -373,15 +431,35 @@ async function cambiarPassword({ usuario_id, password_actual, nueva_password, ta
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 exports.handler = async (event) => {
+  const reqOrigin = event.headers.origin || event.headers.Origin || '';
+  const CORS = buildCors(reqOrigin);
+
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: CORS, body: '' };
   }
 
+  let body;
   try {
-    const body = JSON.parse(event.body || '{}');
+    body = JSON.parse(event.body || '{}');
     const { action } = body;
-    let result;
 
+    // ─── Verificación de sesión ────────────────────────────────────────────────
+    const PUBLIC_ACTIONS = new Set(['auth', 'ping']);
+    if (!PUBLIC_ACTIONS.has(action)) {
+      if (!TOKEN_SECRET) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Configuración de seguridad incompleta' }) };
+      try {
+        const session = verificarToken(body.token);
+        body.tienda_id       = session.tienda_id;
+        body.usuario_id      = session.user_id;
+        body.solicitante_rol = session.rol;
+        body.usuario         = { id: session.user_id, tienda_id: session.tienda_id, rol: session.rol, nombre: session.nombre };
+      } catch (e) {
+        console.warn('[SECURITY] INVALID_TOKEN', action, e.message);
+        return { statusCode: 401, headers: CORS, body: JSON.stringify({ ok: false, error: e.message, sesion_invalida: true }) };
+      }
+    }
+
+    let result;
     switch (action) {
       case 'auth':
         result = await handleAuth(body);
@@ -477,11 +555,11 @@ exports.handler = async (event) => {
       body: JSON.stringify(result),
     };
   } catch (err) {
-    console.error('[BodegaAPI]', err);
+    console.error('[BodegaAPI ERROR]', { action: body?.action, error: err.message });
     return {
       statusCode: 500,
       headers: CORS,
-      body: JSON.stringify({ error: err.message }),
+      body: JSON.stringify({ error: 'Error interno del servidor' }),
     };
   }
 };

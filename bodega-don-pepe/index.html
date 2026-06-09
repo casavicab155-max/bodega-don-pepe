@@ -1341,8 +1341,42 @@ const API = '/api/chat';
 // ═══════════════════════════════════════════════════════════════════
 // ESTADO GLOBAL
 // ═══════════════════════════════════════════════════════════════════
+// ─── Helpers de seguridad ─────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+// Sanitizador HTML de lista blanca — permite solo los tags que Dona genera
+function sanitizarHtml(html) {
+  const TAGS_OK  = new Set(['strong','em','b','i','br','p','table','thead','tbody','tr','th','td','span','div']);
+  const ATTRS_OK = new Set(['class','style','colspan','rowspan']);
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  (function limpiar(node) {
+    Array.from(node.childNodes).forEach(child => {
+      if (child.nodeType !== Node.ELEMENT_NODE) return;
+      if (!TAGS_OK.has(child.tagName.toLowerCase())) {
+        child.replaceWith(document.createTextNode(child.textContent));
+        return;
+      }
+      Array.from(child.attributes).forEach(attr => {
+        if (!ATTRS_OK.has(attr.name.toLowerCase()) || /javascript:|data:|vbscript:/i.test(attr.value))
+          child.removeAttribute(attr.name);
+      });
+      limpiar(child);
+    });
+  })(tmp);
+  return tmp.innerHTML;
+}
+
 let estadoApp = {
   usuario: null,
+  token: null,
   productos: [],
   carrito: [],
   historialChat: [],
@@ -1354,6 +1388,8 @@ let estadoApp = {
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 async function api(body, timeoutMs = 25000) {
+  // Inyectar token de sesión en toda petición autenticada
+  if (estadoApp.token) body = { ...body, token: estadoApp.token };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -1364,7 +1400,13 @@ async function api(body, timeoutMs = 25000) {
       signal: controller.signal,
     });
     if (!res.ok) throw new Error(`Error ${res.status}`);
-    return res.json();
+    const data = await res.json();
+    // Sesión expirada o token inválido → cerrar sesión automáticamente
+    if (data.sesion_invalida) {
+      toast('⏰ Sesión expirada. Inicia sesión nuevamente.', 'error');
+      setTimeout(cerrarSesion, 1500);
+    }
+    return data;
   } finally {
     clearTimeout(timer);
   }
@@ -1456,6 +1498,7 @@ async function registrar() {
     const res = await api({ action: 'registro', nombre_tienda, nombre_admin: username, password, ciudad, whatsapp });
     if (res.ok) {
       estadoApp.usuario = res.user;
+      estadoApp.token   = res.token;
       iniciarApp();
       toast('✅ ¡Bienvenido! Tu bodega está lista', 'success');
     } else {
@@ -1544,6 +1587,7 @@ async function login() {
       errEl.style.color = '';
       if (res.ok) {
         estadoApp.usuario = res.user;
+        estadoApp.token   = res.token;
         iniciarApp();
         mostrarRecordatorioCredenciales(res.user, username);
         return;
@@ -1568,7 +1612,7 @@ async function login() {
 function cerrarSesion() {
   document.getElementById('btn-ayuda').style.display = 'none';
   document.getElementById('panel-ayuda').style.display = 'none';
-  estadoApp = { usuario: null, productos: [], carrito: [], historialChat: [], reconocimiento: null, grabando: false };
+  estadoApp = { usuario: null, token: null, productos: [], carrito: [], historialChat: [], reconocimiento: null, grabando: false };
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('inp-codigo').value = '';
@@ -2166,17 +2210,29 @@ async function enviarArchivoFactura(file) {
     } else if (res.es_duplicado) {
       const div = document.createElement('div');
       div.className = 'bubble ia';
-      div.innerHTML = `⚠️ ${res.mensaje_duplicado.replace(/\n/g, '<br>')}
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button onclick="confirmarFacturaDuplicada(this,'${res.hash_imagen}','${res.numero_factura || ''}','${base64}')"
-            style="flex:1;padding:8px;background:var(--red);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;touch-action:manipulation">
-            Sí, registrarla igual
-          </button>
-          <button onclick="this.closest('.bubble').remove()"
-            style="flex:1;padding:8px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;touch-action:manipulation">
-            No, cancelar
-          </button>
-        </div>`;
+
+      // Texto del mensaje — textContent evita cualquier inyección HTML
+      const msgP = document.createElement('p');
+      msgP.style.margin = '0 0 12px 0';
+      msgP.textContent = '⚠️ ' + (res.mensaje_duplicado || '');
+      div.appendChild(msgP);
+
+      // Botones construidos programáticamente — sin onclick con datos del servidor
+      const btnsDiv = document.createElement('div');
+      btnsDiv.style.cssText = 'display:flex;gap:8px';
+      const btnSi = document.createElement('button');
+      btnSi.textContent = 'Sí, registrarla igual';
+      btnSi.style.cssText = 'flex:1;padding:8px;background:var(--red);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;touch-action:manipulation';
+      btnSi.addEventListener('click', function() {
+        confirmarFacturaDuplicada(this, res.hash_imagen, res.numero_factura || '', base64);
+      });
+      const btnNo = document.createElement('button');
+      btnNo.textContent = 'No, cancelar';
+      btnNo.style.cssText = 'flex:1;padding:8px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;touch-action:manipulation';
+      btnNo.addEventListener('click', function() { this.closest('.bubble').remove(); });
+      btnsDiv.appendChild(btnSi);
+      btnsDiv.appendChild(btnNo);
+      div.appendChild(btnsDiv);
       cont.appendChild(div);
       cont.scrollTop = cont.scrollHeight;
     } else {
@@ -2381,13 +2437,15 @@ function agregarBurbuja(quien, texto, typing = false, esAccion = false) {
   const div = document.createElement('div');
   div.className = `bubble ${quien}${typing ? ' typing' : ''}${esAccion ? ' ok-action' : ''}`;
   if (!typing) {
-    // 1. Markdown básico + saltos
-    const html = texto
+    // 1. Markdown básico + saltos, luego sanitizar con lista blanca
+    // sanitizarHtml elimina tags peligrosos (script, img, iframe…) y atributos
+    // de evento (onerror, onclick…) preservando los que Claude genera legítimamente.
+    const rawHtml = texto
       .replace(/\r\n|\r/g, '\n')
       .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
       .replace(/\n/g, '<br>');
-    div.innerHTML = html;
+    div.innerHTML = sanitizarHtml(rawHtml);
 
     // 2. DOM: eliminar <br> adyacentes a cada <table> y envolverla en .table-scroll
     div.querySelectorAll('table').forEach(table => {

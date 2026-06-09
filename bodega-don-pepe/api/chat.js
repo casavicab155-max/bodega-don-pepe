@@ -7,8 +7,58 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://eoyvzkargirskdttuxmn.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVveXZ6a2FyZ2lyc2tkdHR1eG1uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0OTQyNzIsImV4cCI6MjA5NTA3MDI3Mn0.k3Znq41STrhcpVW-9ETvtojN6qZqEsovV-VC_Nxox6I';
+const SUPABASE_KEY   = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+const TOKEN_SECRET   = process.env.TOKEN_SECRET;   // openssl rand -hex 32
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '';
+
+// ─── Tokens de sesión (HMAC-SHA256, sin deps externas, 24 h) ─────────────────
+const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+function generarToken(payload) {
+  const data = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + TOKEN_EXPIRY_MS })).toString('base64url');
+  const sig  = crypto.createHmac('sha256', TOKEN_SECRET || '').update(data).digest('hex');
+  return `${data}.${sig}`;
+}
+
+function verificarToken(token) {
+  if (!TOKEN_SECRET) throw new Error('TOKEN_SECRET no configurado');
+  if (!token) throw new Error('Sin sesión activa');
+  const dot = token.lastIndexOf('.');
+  if (dot < 1) throw new Error('Token inválido');
+  const data     = token.slice(0, dot);
+  const sig      = token.slice(dot + 1);
+  const expected = crypto.createHmac('sha256', TOKEN_SECRET).update(data).digest('hex');
+  // Comparación en tiempo constante para evitar timing attacks
+  const aBuf = Buffer.from(sig.padEnd(expected.length, '0').slice(0, expected.length));
+  const bBuf = Buffer.from(expected);
+  if (aBuf.length !== bBuf.length || !crypto.timingSafeEqual(aBuf, bBuf)) throw new Error('Token inválido');
+  let payload;
+  try { payload = JSON.parse(Buffer.from(data, 'base64url').toString()); } catch { throw new Error('Token corrupto'); }
+  if (payload.exp < Date.now()) throw new Error('Sesión expirada. Inicia sesión nuevamente.');
+  return payload;
+}
+
+// ─── Rate limiting para login (in-memory; se resetea en cold starts) ──────────
+const _loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS    = 15 * 60 * 1000;
+
+function checkLoginRate(key) {
+  const now = Date.now();
+  const e   = _loginAttempts.get(key);
+  if (!e || now - e.since > LOGIN_WINDOW_MS) { _loginAttempts.set(key, { count: 1, since: now }); return null; }
+  if (e.count >= MAX_LOGIN_ATTEMPTS) {
+    const mins = Math.ceil((LOGIN_WINDOW_MS - (now - e.since)) / 60000);
+    return `Demasiados intentos fallidos. Espera ${mins} minuto(s).`;
+  }
+  e.count++;
+  return null;
+}
+function clearLoginRate(key) { _loginAttempts.delete(key); }
+
+function logSecurity(event, details = {}) {
+  console.warn('[SECURITY]', event, JSON.stringify({ ...details, ts: new Date().toISOString() }));
+}
 
 // ─── Helper: llamar a Supabase REST API ──────────────────────────────────────
 async function sb(method, path, body = null) {
@@ -74,6 +124,13 @@ async function getUsuariosBodega({ codigo }) {
 
 // ─── Autenticación ───────────────────────────────────────────────────────────
 async function handleAuth({ username, password }) {
+  const key = (username || '').toLowerCase().trim();
+  const rateLimitMsg = checkLoginRate(key);
+  if (rateLimitMsg) {
+    logSecurity('RATE_LIMIT_HIT', { username: key });
+    return { ok: false, error: rateLimitMsg };
+  }
+
   let user = null;
 
   // Formato nuevo: codigo.usuario (ej: reyes.maria o reyes.Maria — insensible a mayúsculas)
@@ -95,7 +152,10 @@ async function handleAuth({ username, password }) {
     user = rows?.[0] || null;
   }
 
-  if (!user) return { ok: false, error: 'Usuario no encontrado' };
+  if (!user) {
+    logSecurity('AUTH_FAILURE', { reason: 'user_not_found', username: key });
+    return { ok: false, error: 'Usuario o contraseña incorrectos' };
+  }
 
   let passwordOk = false;
   if (user.password_hash && user.password_hash.startsWith('$2')) {
@@ -107,14 +167,20 @@ async function handleAuth({ username, password }) {
       await sb('PATCH', `usuarios?id=eq.${user.id}`, { password_hash: hashed });
     }
   }
-  if (!passwordOk) return { ok: false, error: 'Contraseña incorrecta' };
+  if (!passwordOk) {
+    logSecurity('AUTH_FAILURE', { reason: 'wrong_password', username: key });
+    return { ok: false, error: 'Usuario o contraseña incorrectos' };
+  }
 
+  clearLoginRate(key);
   const tiendas = await sb('GET', `tiendas?id=eq.${user.tienda_id}`);
   const tienda = tiendas?.[0];
   const nombre_tienda = tienda?.nombre || '';
   const codigo_tienda = tienda?.codigo || '';
+  const token = generarToken({ user_id: user.id, tienda_id: user.tienda_id, rol: user.rol, nombre: user.nombre });
   return {
     ok: true,
+    token,
     user: { id: user.id, username: user.username, nombre: user.nombre, rol: user.rol, tienda_id: user.tienda_id, nombre_tienda, codigo_tienda },
   };
 }
@@ -138,8 +204,10 @@ async function registrarTienda({ nombre_tienda, nombre_admin, password, whatsapp
   const [usuario] = await sb('POST', 'usuarios', {
     username: nombre_admin, password_hash: hashedPassword, nombre: nombre_admin, rol: 'admin', tienda_id: tienda.id,
   });
+  const token = generarToken({ user_id: usuario.id, tienda_id: tienda.id, rol: 'admin', nombre: usuario.nombre });
   return {
     ok: true,
+    token,
     user: { id: usuario.id, username: usuario.username, nombre: usuario.nombre, rol: usuario.rol, tienda_id: tienda.id, codigo_tienda: codigo, nombre_tienda: tienda.nombre },
     tienda: { id: tienda.id, nombre: tienda.nombre, codigo },
   };
@@ -168,18 +236,25 @@ async function crearVendedor({ tienda_id, nombre, username, password }) {
   const codigo = tiendas?.[0]?.codigo || '';
   return { ok: true, username_completo: codigo ? `${codigo}.${username}` : username };
 }
-async function desactivarVendedor(id) {
+async function desactivarVendedor(id, tienda_id) {
+  // Verificar que el vendedor pertenece a la misma tienda antes de desactivar
+  const rows = await sb('GET', `usuarios?id=eq.${id}&tienda_id=eq.${tienda_id}&rol=eq.vendedor`);
+  if (!rows || rows.length === 0) return { ok: false, error: 'Vendedor no encontrado en tu tienda' };
   await sb('PATCH', `usuarios?id=eq.${id}`, { activo: false });
   return { ok: true };
 }
-async function cambiarPassword({ usuario_id, password_actual, nueva_password, target_id, solicitante_rol }) {
+async function cambiarPassword({ usuario_id, password_actual, nueva_password, target_id, solicitante_rol, tienda_id }) {
   if (!nueva_password || nueva_password.length < 6) return { ok: false, error: 'La nueva contraseña debe tener al menos 6 caracteres' };
 
   // Admin cambiando contraseña de un vendedor (no necesita contraseña actual)
   if (target_id && target_id !== usuario_id) {
     if (solicitante_rol !== 'admin') return { ok: false, error: 'Sin permisos' };
+    // Verificar que el target pertenece a la misma tienda
+    const check = await sb('GET', `usuarios?id=eq.${target_id}&tienda_id=eq.${tienda_id}`);
+    if (!check || check.length === 0) return { ok: false, error: 'Usuario no encontrado en tu tienda' };
     const hashed = await bcrypt.hash(nueva_password, 10);
     await sb('PATCH', `usuarios?id=eq.${target_id}`, { password_hash: hashed });
+    logSecurity('PASSWORD_CHANGED_BY_ADMIN', { admin_id: usuario_id, target_id, tienda_id });
     return { ok: true };
   }
 
@@ -1196,16 +1271,42 @@ Para cualquier otra consulta responde en texto normal, máximo 3 oraciones.`;
 
 // ─── Handler principal (Vercel) ──────────────────────────────────────────────
 module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS — solo el origen configurado (o el mismo dominio si no se configura)
+  const reqOrigin = req.headers.origin || '';
+  if (!ALLOWED_ORIGIN || reqOrigin === ALLOWED_ORIGIN) {
+    res.setHeader('Access-Control-Allow-Origin', reqOrigin || 'null');
+  }
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Vary', 'Origin');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  let body;
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const { action } = body;
-    let result;
 
+    // ─── Verificación de sesión para rutas protegidas ─────────────────────────
+    const PUBLIC_ACTIONS = new Set(['auth', 'getUsuariosBodega', 'registro', 'ping']);
+    if (!PUBLIC_ACTIONS.has(action)) {
+      if (!TOKEN_SECRET) {
+        logSecurity('TOKEN_SECRET_MISSING', { action });
+        return res.status(500).json({ error: 'Configuración de seguridad incompleta' });
+      }
+      try {
+        const session = verificarToken(body.token);
+        // Sobrescribir con valores del token verificado — el cliente no puede falsificarlos
+        body.tienda_id       = session.tienda_id;
+        body.usuario_id      = session.user_id;
+        body.solicitante_rol = session.rol;
+        body.usuario         = { id: session.user_id, tienda_id: session.tienda_id, rol: session.rol, nombre: session.nombre };
+      } catch (e) {
+        logSecurity('INVALID_TOKEN', { action, reason: e.message });
+        return res.status(401).json({ ok: false, error: e.message, sesion_invalida: true });
+      }
+    }
+
+    let result;
     switch (action) {
       case 'auth':                 result = await handleAuth(body); break;
       case 'getUsuariosBodega':    result = await getUsuariosBodega(body); break;
@@ -1218,7 +1319,7 @@ module.exports = async (req, res) => {
       case 'registrarEntrada': result = await registrarEntrada(body); break;
       case 'getVendedores':  result = await getVendedores(body.tienda_id); break;
       case 'crearVendedor':  result = await crearVendedor(body); break;
-      case 'desactivarVendedor': result = await desactivarVendedor(body.id); break;
+      case 'desactivarVendedor': result = await desactivarVendedor(body.id, body.tienda_id); break;
       case 'cambiarPassword':      result = await cambiarPassword(body); break;
       case 'cambiarNombreTienda':  result = await cambiarNombreTienda(body); break;
       case 'ping':                 result = { ok: true, ts: Date.now() }; break;
@@ -1302,7 +1403,7 @@ module.exports = async (req, res) => {
 
     return res.status(200).json(result);
   } catch (err) {
-    console.error('[Dona API ERROR]', { timestamp: new Date().toISOString(), error: err.message, stack: err.stack });
-    return res.status(500).json({ error: err.message });
+    console.error('[Dona API ERROR]', { timestamp: new Date().toISOString(), action: body?.action, error: err.message });
+    return res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
