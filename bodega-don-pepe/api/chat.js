@@ -543,7 +543,16 @@ Si no puedes calcular un campo con certeza ponlo en null.`,
   const productosExistentes = await getProductos(tienda_id);
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 
-  const resultados = { nuevos: [], actualizados: [], precio_cambio: [], sin_precio_venta: [] };
+  // Score de similitud por palabras en común (para match incierto)
+  const scoreMatch = (a, b) => {
+    const words = s => norm(s).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2);
+    const wa = words(a), wb = words(b);
+    if (!wa.length || !wb.length) return 0;
+    const shared = wa.filter(w => wb.some(v => v === w || v.includes(w) || w.includes(v)));
+    return shared.length / Math.max(wa.length, wb.length);
+  };
+
+  const resultados = { nuevos: [], actualizados: [], precio_cambio: [], sin_precio_venta: [], inciertos: [] };
 
   for (const item of facturaData.productos) {
     if (!item.nombre || !item.cantidad) continue;
@@ -552,9 +561,15 @@ Si no puedes calcular un campo con certeza ponlo en null.`,
     // Claude calcula costo_unitario_final directamente (IGV + descuentos ya considerados)
     const precio_costo = parseFloat(parseFloat(item.costo_unitario_final || 0).toFixed(2));
 
-    // Buscar si el producto ya existe
+    // Tier 1: match exacto | Tier 2: uno contiene al otro
     const existente = productosExistentes.find(p => norm(p.nombre) === norm(item.nombre)) ||
       productosExistentes.find(p => norm(p.nombre).includes(norm(item.nombre)) || norm(item.nombre).includes(norm(p.nombre)));
+
+    // Tier 3: palabras en común (incierto — se pregunta al bodeguero)
+    const fuzzy = !existente && productosExistentes
+      .map(p => ({ p, score: scoreMatch(p.nombre, item.nombre) }))
+      .filter(x => x.score >= 0.35)
+      .sort((a, b) => b.score - a.score)[0]?.p;
 
     if (existente) {
       // Sumar stock
@@ -588,6 +603,17 @@ Si no puedes calcular un campo con certeza ponlo en null.`,
       }).catch(() => {});
 
       resultados.actualizados.push({ nombre: existente.nombre, cantidad, stock_nuevo: nuevo_stock });
+    } else if (fuzzy) {
+      // Match incierto — no procesar, devolver al bodeguero para que confirme
+      resultados.inciertos.push({
+        nombre_factura: item.nombre,
+        cantidad,
+        precio_costo,
+        categoria: item.categoria || 'general',
+        unidad: item.unidad || 'unidad',
+        proveedor: facturaData.proveedor || null,
+        producto_existente: { id: fuzzy.id, nombre: fuzzy.nombre, stock: parseFloat(fuzzy.stock) || 0 },
+      });
     } else {
       // Producto nuevo — crear sin precio de venta por ahora
       if (precio_costo > 0) {
@@ -665,9 +691,83 @@ Si no puedes calcular un campo con certeza ponlo en null.`,
     respuesta += '\n\nDime el precio de cada uno para que tus clientes puedan comprarlos.';
   }
 
+  if (resultados.inciertos.length > 0) {
+    respuesta += `\n\n⚠️ Tengo dudas sobre ${resultados.inciertos.length} producto(s) — te los muestro para que me confirmes.`;
+  }
+
   if (!respuesta) respuesta = 'Procesé la factura pero no encontré productos claros. Intenta con una foto más nítida.';
 
-  return { ok: true, respuesta, resultados };
+  return {
+    ok: true,
+    respuesta,
+    resultados,
+    inciertos: resultados.inciertos.length > 0 ? resultados.inciertos : undefined,
+  };
+}
+
+// ─── Confirmar matches inciertos de factura ───────────────────────────────────
+async function confirmarMatchesFactura({ tienda_id, usuario, decisiones }) {
+  if (!decisiones || !decisiones.length) return { ok: false, error: 'Sin decisiones' };
+  const confirmados = [], nuevos = [];
+
+  for (const d of decisiones) {
+    const { nombre_factura, cantidad, precio_costo, categoria, unidad, proveedor, es_mismo, producto_id } = d;
+
+    if (es_mismo && producto_id) {
+      // El bodeguero dijo que SÍ es el mismo → sumar stock al existente
+      const rows = await sb('GET', `productos?id=eq.${producto_id}`);
+      const existente = rows?.[0];
+      if (existente) {
+        const nuevo_stock = (parseFloat(existente.stock) || 0) + cantidad;
+        const data = { stock: nuevo_stock };
+        if (precio_costo > 0) data.precio_costo = precio_costo;
+        await sb('PATCH', `productos?id=eq.${producto_id}`, data);
+        await sb('POST', 'entradas_mercaderia', {
+          usuario_id: usuario?.id || null,
+          tienda_id,
+          producto_id,
+          cantidad,
+          precio_costo: precio_costo || existente.precio_costo,
+          proveedor: proveedor || null,
+          origen: 'factura',
+        }).catch(() => {});
+        confirmados.push({ nombre: existente.nombre, cantidad, stock_nuevo: nuevo_stock });
+      }
+    } else {
+      // El bodeguero dijo que NO es el mismo → crear producto nuevo
+      const nuevoProducto = {
+        nombre: nombre_factura,
+        categoria: categoria || 'general',
+        unidad: unidad || 'unidad',
+        precio_costo: precio_costo || 0,
+        precio_venta: 0,
+        stock: cantidad,
+        stock_minimo: 5,
+        activo: true,
+        tienda_id,
+      };
+      const [creado] = await sb('POST', 'productos', nuevoProducto);
+      await sb('POST', 'entradas_mercaderia', {
+        usuario_id: usuario?.id || null,
+        tienda_id,
+        producto_id: creado.id,
+        cantidad,
+        precio_costo: precio_costo || 0,
+        proveedor: proveedor || null,
+        origen: 'factura',
+      }).catch(() => {});
+      nuevos.push({ nombre: nombre_factura, cantidad });
+    }
+  }
+
+  let respuesta = '';
+  if (confirmados.length > 0)
+    respuesta += `✅ Stock actualizado: ${confirmados.map(p => `**${p.nombre}** → ${p.stock_nuevo} unid.`).join(', ')}\n`;
+  if (nuevos.length > 0)
+    respuesta += `🆕 Productos nuevos creados: ${nuevos.map(p => `**${p.nombre}**`).join(', ')}`;
+  if (!respuesta) respuesta = '✅ Listo, registrado.';
+
+  return { ok: true, respuesta: respuesta.trim() };
 }
 
 // ─── Buscar producto por nombre ───────────────────────────────────────────────
@@ -1111,7 +1211,8 @@ module.exports = async (req, res) => {
       case 'cambiarPassword':      result = await cambiarPassword(body); break;
       case 'cambiarNombreTienda':  result = await cambiarNombreTienda(body); break;
       case 'ping':                 result = { ok: true, ts: Date.now() }; break;
-      case 'analizarFactura':      result = await analizarFactura(body); break;
+      case 'analizarFactura':         result = await analizarFactura(body); break;
+      case 'confirmarMatchesFactura': result = await confirmarMatchesFactura(body); break;
       case 'buscarCatalogo':       result = await buscarCatalogo(body); break;
       case 'guardarEnCatalogo':    result = await guardarEnCatalogo(body); break;
       case 'ajustarStock':   result = await ajustarStock(body); break;
