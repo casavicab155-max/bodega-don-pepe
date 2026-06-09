@@ -1736,8 +1736,9 @@ function renderInventario(filtro = '') {
     // Asignar evento al botón de foto después de renderizar
     const btnFoto = document.getElementById('btn-foto-inventario');
     if (btnFoto) {
-      btnFoto.addEventListener('click', abrirMenuFoto);
-      btnFoto.addEventListener('touchend', e => { e.preventDefault(); abrirMenuFoto(); });
+      const irAFoto = () => { navegar('ia', document.querySelectorAll('.nav-btn')[2]); abrirMenuFoto(); };
+      btnFoto.addEventListener('click', irAFoto);
+      btnFoto.addEventListener('touchend', e => { e.preventDefault(); irAFoto(); });
     }
     return;
   }
@@ -2105,12 +2106,12 @@ function cerrarMenuFoto() {
   document.getElementById('menu-foto').style.display = 'none';
 }
 document.addEventListener('click', e => {
-  if (!e.target.closest('#menu-foto') && !e.target.closest('[onclick*=abrirMenuFoto]')) {
+  if (!e.target.closest('#menu-foto') && !e.target.closest('[onclick*=abrirMenuFoto]') && !e.target.closest('#btn-foto-inventario')) {
     cerrarMenuFoto();
   }
 });
 document.addEventListener('touchend', e => {
-  if (_menuFotoAbierto && !e.target.closest('#menu-foto') && !e.target.closest('[onclick*=abrirMenuFoto]')) {
+  if (_menuFotoAbierto && !e.target.closest('#menu-foto') && !e.target.closest('[onclick*=abrirMenuFoto]') && !e.target.closest('#btn-foto-inventario')) {
     setTimeout(cerrarMenuFoto, 50);
   }
 });
