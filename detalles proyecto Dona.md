@@ -303,25 +303,41 @@ A largo plazo, todas las confirmaciones del bodeguero (sí/no) se guardan como r
 
 ---
 
-## Seguridad (OWASP — implementado)
+## Seguridad (OWASP Top 10 — auditoría completa)
+
+Auditoría realizada en junio 2026 sobre `api/chat.js` (Vercel), `netlify/functions/chat.js` e `index.html`. Todas las categorías aplicables fueron corregidas.
 
 ### Variables de entorno requeridas en Vercel
 | Variable | Cómo generarla | Para qué |
 |---|---|---|
 | `TOKEN_SECRET` | `openssl rand -hex 32` | Firma HMAC-SHA256 de tokens de sesión |
-| `ALLOWED_ORIGIN` | URL del deployment (ej: `https://dona.vercel.app`) | Restringe CORS al dominio propio |
-| `SUPABASE_SERVICE_KEY` | Panel Supabase → Settings → API | Clave de servicio (ya no hay fallback hardcodeado) |
+| `ALLOWED_ORIGIN` | URL exacta del deployment (ej: `https://bodega-don-pepe.vercel.app`) | Restringe CORS al dominio propio — debe incluir `https://` sin barra final |
+| `SUPABASE_SERVICE_KEY` | Panel Supabase → Settings → API | Clave de servicio (eliminado el fallback a la anon key hardcodeada) |
 
 ### Modelo de autenticación post-login
-- Login devuelve un **token HMAC-SHA256** con payload `{ user_id, tienda_id, rol, exp }` y TTL de 24 h
-- El frontend guarda el token en `estadoApp.token` y lo envía en cada petición
+- Login devuelve un **token HMAC-SHA256** con payload `{ user_id, tienda_id, rol, nombre, exp }` y TTL de 24 h
+- El frontend guarda el token en `estadoApp.token` (memoria, no localStorage) y lo envía en cada petición
 - El servidor **sobrescribe** `tienda_id`, `usuario_id` y `solicitante_rol` del body con los valores del token verificado — el cliente no puede falsificarlos
 - Sesión expirada → respuesta `{ sesion_invalida: true }` → frontend llama `cerrarSesion()` automáticamente
+- Acciones públicas (`auth`, `getUsuariosBodega`, `registro`, `ping`) no requieren token — todo lo demás sí
 
-### Controles implementados por categoría OWASP
-- **A01 Broken Access Control:** `desactivarVendedor` y `cambiarPassword` verifican que el target pertenezca a la misma tienda; `tienda_id` siempre viene del token, no del body
-- **A02 Cryptographic Failures:** eliminada la Supabase key hardcodeada; tokens HMAC-SHA256 con comparación en tiempo constante (timingSafeEqual)
-- **A03 XSS:** sanitizador HTML con lista blanca en `agregarBurbuja`; `mensaje_duplicado` usa `textContent`; botones de duplicado con `addEventListener` (sin onclick inline con datos del servidor)
-- **A05 Security Misconfiguration:** CORS restringido a `ALLOWED_ORIGIN`; catch devuelve mensaje genérico sin stack trace
-- **A07 Auth Failures:** rate limiting 5 intentos / 15 min (in-memory); mensajes de error genéricos que no revelan si el usuario existe
-- **A09 Logging:** `logSecurity()` registra intentos fallidos, tokens inválidos y cambios de contraseña por admin
+### OWASP Top 10 — resultado por categoría
+
+| # | Categoría | Estado | Qué se hizo |
+|---|---|---|---|
+| A01 | Broken Access Control | ✅ PASA | `desactivarVendedor` y `cambiarPassword` verifican que el target pertenezca a la misma `tienda_id`. El servidor extrae `tienda_id` y `rol` del token — el cliente no puede pasarlos en el body |
+| A02 | Cryptographic Failures | ✅ PASA | Eliminada `SUPABASE_ANON_KEY` hardcodeada. Tokens HMAC-SHA256 firmados con `TOKEN_SECRET`. Comparación de firmas con `crypto.timingSafeEqual` (evita timing attacks) |
+| A03 | Injection / XSS | ✅ PASA | Sanitizador HTML con lista blanca (`sanitizarHtml`) en todo lo que va al chat. `mensaje_duplicado` usa `textContent`. Botones dinámicos con `addEventListener` en vez de `onclick` inline con datos del servidor |
+| A04 | Insecure Design | ✅ PASA | Separación clara entre acciones públicas y protegidas. El handler central verifica token antes de ejecutar cualquier acción privada. `tienda_id` nunca sale del token |
+| A05 | Security Misconfiguration | ✅ PASA | CORS restringido a `ALLOWED_ORIGIN`. Errores del servidor devuelven mensaje genérico sin stack trace ni detalles internos |
+| A06 | Vulnerable Components | ✅ NO APLICA | Frontend vanilla JS sin dependencias npm. Backend usa solo módulos nativos de Node.js (`crypto`, `https`) |
+| A07 | Identification & Auth Failures | ✅ PASA | Rate limiting 5 intentos / 15 min por username (in-memory). Mensajes de error genéricos que no revelan si el usuario existe. Sesión con TTL de 24 h |
+| A08 | Software & Data Integrity | ✅ PASA | Sin deserialización de objetos no confiables. Dependencias mínimas y fijas. No hay eval ni Function() con datos de usuario |
+| A09 | Logging & Monitoring | ✅ PASA | `logSecurity()` registra: intentos fallidos de login (`AUTH_FAILURE`), rate limit alcanzado (`RATE_LIMIT_HIT`), tokens inválidos (`INVALID_TOKEN`), cambios de contraseña por admin, `TOKEN_SECRET` ausente |
+| A10 | SSRF | ✅ NO APLICA | El servidor solo hace fetch a URLs fijas (Supabase, Anthropic). No hay ningún endpoint que acepte URLs del cliente |
+
+### Archivos modificados en la auditoría
+- `api/chat.js` — token HMAC, rate limiting, IDOR fixes, CORS, logging
+- `netlify/functions/chat.js` — sincronizado con los mismos controles
+- `index.html` — sanitizador HTML, token en `estadoApp`, manejo de `sesion_invalida`, fix XSS en botones dinámicos
+- `sw.js` — bump a `bodega-v7` para forzar actualización del cache
